@@ -8,7 +8,7 @@ After installation, it adds an **Auto-bump** switch to the palette area on the r
 
 ### Installation
 
-1. Unzip the download and double-click `RSZ Version Bumper.glyphsPalette` — Glyphs will offer to install it. (Alternatively, drop it into `~/Library/Application Support/Glyphs 3/Plugins/`.)
+1. Unzip the download and double-click `RSZ Version Bumper.glyphsPalette` — Glyphs will offer to install it. (Alternatively, drop it into `~/Library/Application Support/Glyphs 3/Plugins/` or `~/Library/Application Support/Glyphs 4/Plugins/`.)
 
 2. Restart Glyphs.app.
 
@@ -34,7 +34,7 @@ A 10-second debounce groups a batch of instances into a single increment, so exp
 
 ### Requirements
 
-The plugin requires a recent Glyphs 3 version running on macOS 10.15 or later (the switch control needs 10.15+). The bundle is universal, so it runs natively on both Apple Silicon and Intel. If it does not work for you, please update your app and/or macOS to a newer version.
+The plugin requires Glyphs 3 or Glyphs 4, running on macOS 10.15 or later (the switch control needs 10.15+). The bundle is universal, so it runs natively on both Apple Silicon and Intel. If it does not work for you, please update your app and/or macOS to a newer version.
 
 ### License
 

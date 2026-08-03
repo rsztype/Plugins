@@ -13,9 +13,9 @@
 	<key>CFBundleName</key>
 	<string>RSZ Version Bumper</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.1</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright, RSZ Type, 2026</string>
 	<key>NSPrincipalClass</key>
