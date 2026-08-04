@@ -17,7 +17,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.1</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright, RSZ Type, 2026</string>
+	<string>Copyright, Giuseppe Salerno / RSZ Type, 2026</string>
 	<key>NSPrincipalClass</key>
 	<string>RSZVersionBumperPalette</string>
 	<key>PyMainFileNames</key>

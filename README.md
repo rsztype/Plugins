@@ -1,6 +1,6 @@
 # Resistenza Type — Glyphs Plugins
 
-Plugins for the [Glyphs font editor](https://glyphsapp.com/), by [Resistenza Type](https://rsztype.com).
+Plugins for the [Glyphs font editor](https://glyphsapp.com/), by Giuseppe Salerno ([Resistenza Type](https://rsztype.com)).
 
 ## Contents
 
@@ -8,4 +8,4 @@ Plugins for the [Glyphs font editor](https://glyphsapp.com/), by [Resistenza Typ
 
 ## License
 
-Each plugin's license is in its own subfolder. Unless noted otherwise, copyright 2026 Resistenza Type (rsztype.com) — free to use, modify, and distribute, provided as-is.
+Each plugin's license is in its own subfolder. Unless noted otherwise, copyright 2026 Giuseppe Salerno / Resistenza Type (rsztype.com) — free to use, modify, and distribute, provided as-is.

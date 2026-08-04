@@ -1,5 +1,7 @@
 # RSZ Version Bumper.glyphsPalette
 
+By Giuseppe Salerno ([Resistenza Type](https://rsztype.com)).
+
 This is a plugin for the [Glyphs font editor](https://glyphsapp.com/). It automatically increases the font version by `0.001` every time you export, so each exported file carries a unique, incrementing version number without any manual step.
 
 After installation, it adds an **Auto-bump** switch to the palette area on the right (the Inspector). When the switch is on, every export increments `versionMinor` in *Font Info > Font*, saves the `.glyphs` file, and shows a notification with the new version. When it is off, nothing happens. The switch state is remembered between launches.
@@ -38,6 +40,6 @@ The plugin requires Glyphs 3 or Glyphs 4, running on macOS 10.15 or later (the s
 
 ### License
 
-Copyright 2026 Resistenza Type (rsztype.com).
+Copyright 2026 Giuseppe Salerno / Resistenza Type (rsztype.com).
 
 You may use, modify, and distribute this plugin freely. It is provided as-is, without warranty of any kind.
