@@ -4,8 +4,8 @@ import objc
 from GlyphsApp import Glyphs, DOCUMENTEXPORTED
 from GlyphsApp.plugins import PalettePlugin
 from vanilla import Window, Group, TextBox
-from Foundation import NSDate, NSMakeRect
-from AppKit import NSViewWidthSizable, NSViewMinXMargin
+from Foundation import NSDate
+from AppKit import NSViewWidthSizable, NSViewMinXMargin, NSControlSizeMini
 
 PREF_KEY = "com.rsztype.RSZVersionBumper.enabled"
 
@@ -82,7 +82,11 @@ class RSZVersionBumperPalette(PalettePlugin):
 		# the export hook) should still come up rather than taking Glyphs down.
 		try:
 			NSSwitch = objc.lookUpClass("NSSwitch")
-			sw = NSSwitch.alloc().initWithFrame_(NSMakeRect(width - 48, 4, 40, 22))
+			sw = NSSwitch.alloc().init()
+			sw.setControlSize_(NSControlSizeMini)
+			sw.sizeToFit()                      # ask AppKit for the mini switch's real size
+			frame = sw.frame()
+			sw.setFrameOrigin_((width - 8 - frame.size.width, (height - frame.size.height) / 2))
 			sw.setTarget_(self)
 			sw.setAction_("toggle:")
 			sw.setState_(1 if Glyphs.defaults[PREF_KEY] else 0)
