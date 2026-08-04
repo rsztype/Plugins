@@ -134,7 +134,6 @@ class RSZVersionBumperPalette(PalettePlugin):
 		self.paletteView = Window((width, height))
 		self.paletteView.group = Group((0, 0, width, height))
 		self.paletteView.group.label = TextBox((8, 7, width - 16 - switch_width, 18), "Increase Vers.", sizeStyle="small")
-		self.paletteView.group.label.getNSView().setAlphaValue_(1.0 if Glyphs.defaults[PREF_KEY] else 0.4)
 
 		groupView = self.paletteView.group.getNSView()
 		groupView.setAutoresizingMask_(NSViewWidthSizable)
@@ -163,9 +162,7 @@ class RSZVersionBumperPalette(PalettePlugin):
 		_ensure_engine()   # registers the observer only once
 
 	def toggle_(self, sender):
-		on = bool(sender.state())
-		Glyphs.defaults[PREF_KEY] = on
-		self.paletteView.group.label.getNSView().setAlphaValue_(1.0 if on else 0.4)
+		Glyphs.defaults[PREF_KEY] = bool(sender.state())
 
 	@objc.python_method
 	def __file__(self):
