@@ -4,8 +4,8 @@ import objc
 from GlyphsApp import Glyphs, DOCUMENTEXPORTED
 from GlyphsApp.plugins import PalettePlugin
 from vanilla import Window, Group, TextBox
-from Foundation import NSDate
-from AppKit import NSViewWidthSizable, NSViewMinXMargin, NSControlSizeMini
+from Foundation import NSDate, NSMakeRect
+from AppKit import NSViewWidthSizable, NSViewMinXMargin, NSControl, NSBezierPath, NSColor
 
 PREF_KEY = "com.rsztype.RSZVersionBumper.enabled"
 
@@ -60,6 +60,49 @@ def _ensure_engine():
 
 
 # ----------------------------------------------------------------------
+# Custom-drawn pill switch: a plain NSSwitch can't be reshaped (its knob
+# is drawn entirely by the system), so this hand-draws a round track and
+# a circular knob instead. Subclasses NSControl (not NSView) to get
+# target/action dispatch and .state() for free, matching NSSwitch's API
+# closely enough that toggle_() below needs no changes.
+# ----------------------------------------------------------------------
+class _RSZPillSwitch(NSControl):
+
+	def initWithFrame_(self, frame):
+		self = objc.super(_RSZPillSwitch, self).initWithFrame_(frame)
+		if self is None:
+			return None
+		self._on = False
+		return self
+
+	@objc.python_method
+	def setOn_(self, on):
+		self._on = bool(on)
+		self.setNeedsDisplay_(True)
+
+	def state(self):
+		return 1 if self._on else 0
+
+	def drawRect_(self, rect):
+		bounds = self.bounds()
+		h = bounds.size.height
+		track = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bounds, h / 2.0, h / 2.0)
+		(NSColor.controlAccentColor() if self._on else NSColor.quaternaryLabelColor()).set()
+		track.fill()
+
+		d = h - 4
+		x = bounds.size.width - d - 2 if self._on else 2
+		knob = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x, 2, d, d))
+		NSColor.whiteColor().set()
+		knob.fill()
+
+	def mouseDown_(self, event):
+		self._on = not self._on
+		self.setNeedsDisplay_(True)
+		self.sendAction_to_(self.action(), self.target())
+
+
+# ----------------------------------------------------------------------
 # Palette: the switch in the right-hand inspector column.
 # ----------------------------------------------------------------------
 class RSZVersionBumperPalette(PalettePlugin):
@@ -68,28 +111,26 @@ class RSZVersionBumperPalette(PalettePlugin):
 	def settings(self):
 		self.name = "Version Bumper"
 
-		width = 160
+		width = 250
 		height = 30
+		switch_width = 40
 		self.paletteView = Window((width, height))
 		self.paletteView.group = Group((0, 0, width, height))
-		self.paletteView.group.label = TextBox((8, 7, 90, 18), "Increase Version when Export", sizeStyle="small")
+		self.paletteView.group.label = TextBox((8, 7, width - 16 - switch_width, 18), "Increase Version when Export", sizeStyle="small")
 
 		groupView = self.paletteView.group.getNSView()
 		groupView.setAutoresizingMask_(NSViewWidthSizable)
 
-		# macOS switch (NSSwitch), built and attached defensively: if anything
+		# custom pill switch, built and attached defensively: if anything
 		# about raw AppKit interop fails here, the rest of the palette (and
 		# the export hook) should still come up rather than taking Glyphs down.
 		try:
-			NSSwitch = objc.lookUpClass("NSSwitch")
-			sw = NSSwitch.alloc().init()
-			sw.setControlSize_(NSControlSizeMini)
-			sw.sizeToFit()                      # ask AppKit for the mini switch's real size
+			sw = _RSZPillSwitch.alloc().initWithFrame_(NSMakeRect(0, 0, switch_width - 8, 18))
+			sw.setOn_(bool(Glyphs.defaults[PREF_KEY]))
 			frame = sw.frame()
 			sw.setFrameOrigin_((width - 8 - frame.size.width, (height - frame.size.height) / 2))
 			sw.setTarget_(self)
 			sw.setAction_("toggle:")
-			sw.setState_(1 if Glyphs.defaults[PREF_KEY] else 0)
 			sw.setAutoresizingMask_(NSViewMinXMargin)
 			groupView.addSubview_(sw)
 			self.switch = sw
