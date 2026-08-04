@@ -4,7 +4,7 @@ import objc
 from GlyphsApp import Glyphs, DOCUMENTEXPORTED
 from GlyphsApp.plugins import PalettePlugin
 from vanilla import Window, Group, TextBox
-from Foundation import NSDate, NSMakeRect
+from Foundation import NSDate, NSMakeRect, NSTimer
 from AppKit import NSViewWidthSizable, NSViewMinXMargin, NSControl, NSBezierPath, NSColor
 
 PREF_KEY = "com.rsztype.RSZVersionBumper.enabled"
@@ -73,11 +73,15 @@ class _RSZPillSwitch(NSControl):
 		if self is None:
 			return None
 		self._on = False
+		self._position = 0.0     # 0 = off, 1 = on; animates between the two
+		self._animTarget = 0.0
+		self._timer = None
 		return self
 
 	@objc.python_method
 	def setOn_(self, on):
 		self._on = bool(on)
+		self._position = 1.0 if self._on else 0.0   # jump, no animation for the initial state
 		self.setNeedsDisplay_(True)
 
 	def state(self):
@@ -87,19 +91,32 @@ class _RSZPillSwitch(NSControl):
 		bounds = self.bounds()
 		h = bounds.size.height
 		track = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(bounds, h / 2.0, h / 2.0)
-		(NSColor.controlAccentColor() if self._on else NSColor.quaternaryLabelColor()).set()
+		(NSColor.controlAccentColor() if self._position >= 0.5 else NSColor.quaternaryLabelColor()).set()
 		track.fill()
 
 		d = h - 4
-		x = bounds.size.width - d - 2 if self._on else 2
+		x = 2 + (bounds.size.width - d - 4) * self._position
 		knob = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x, 2, d, d))
 		NSColor.whiteColor().set()
 		knob.fill()
 
 	def mouseDown_(self, event):
 		self._on = not self._on
-		self.setNeedsDisplay_(True)
+		self._animTarget = 1.0 if self._on else 0.0
+		if self._timer is None:
+			self._timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+				1.0 / 60.0, self, "_tick:", None, True)
 		self.sendAction_to_(self.action(), self.target())
+
+	def _tick_(self, timer):
+		diff = self._animTarget - self._position
+		if abs(diff) < 0.01:
+			self._position = self._animTarget
+			timer.invalidate()
+			self._timer = None
+		else:
+			self._position += diff * 0.35            # ease toward the target each frame
+		self.setNeedsDisplay_(True)
 
 
 # ----------------------------------------------------------------------
