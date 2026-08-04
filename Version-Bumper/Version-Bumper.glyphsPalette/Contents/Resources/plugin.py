@@ -111,12 +111,12 @@ class RSZVersionBumperPalette(PalettePlugin):
 	def settings(self):
 		self.name = "Version Bumper"
 
-		width = 250
+		width = 160
 		height = 30
 		switch_width = 40
 		self.paletteView = Window((width, height))
 		self.paletteView.group = Group((0, 0, width, height))
-		self.paletteView.group.label = TextBox((8, 7, width - 16 - switch_width, 18), "Increase Version when Export", sizeStyle="small")
+		self.paletteView.group.label = TextBox((8, 7, width - 16 - switch_width, 18), "Increase Vers.", sizeStyle="small")
 
 		groupView = self.paletteView.group.getNSView()
 		groupView.setAutoresizingMask_(NSViewWidthSizable)
@@ -125,7 +125,7 @@ class RSZVersionBumperPalette(PalettePlugin):
 		# about raw AppKit interop fails here, the rest of the palette (and
 		# the export hook) should still come up rather than taking Glyphs down.
 		try:
-			sw = _RSZPillSwitch.alloc().initWithFrame_(NSMakeRect(0, 0, switch_width - 8, 18))
+			sw = _RSZPillSwitch.alloc().initWithFrame_(NSMakeRect(0, 0, switch_width - 8, 14))
 			sw.setOn_(bool(Glyphs.defaults[PREF_KEY]))
 			frame = sw.frame()
 			sw.setFrameOrigin_((width - 8 - frame.size.width, (height - frame.size.height) / 2))
