@@ -10,4 +10,4 @@ Nothing here yet — each plug-in lives in its own repository:
 
 ## License
 
-Each plug-in carries its own license. Unless noted otherwise, copyright 2026 Giuseppe Salerno / Resistenza Type ([rsztype.com](https://rsztype.com)) — free to use, modify, and distribute, provided as-is.
+Each plug-in carries its own license. Unless noted otherwise, copyright 2026 Giuseppe Salerno / Resistenza Type [rsztype.com](https://rsztype.com) — free to use, modify, and distribute, provided as-is.
