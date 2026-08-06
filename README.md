@@ -6,7 +6,7 @@ Plugins for the [Glyphs font editor](https://glyphsapp.com/), by Giuseppe Salern
 
 Nothing here yet — each plug-in lives in its own repository:
 
-- [**Version Bumper**](https://github.com/rsztype/Version-Bumper) — adds an Auto-bump switch to the inspector that increments a font's version by `0.001` and saves on every export.
+- [**Numeratore**](https://github.com/rsztype/Numeratore) — adds an Increase Vers. switch to the inspector that increments a font's version by `0.001` and saves on every export.
 
 ## License
 
