@@ -1,6 +1,6 @@
 # Resistenza Type — Glyphs Plugins
 
-Plugins for the [Glyphs font editor](https://glyphsapp.com/), by Giuseppe Salerno ([Resistenza Type](https://rsztype.com)).
+Plugins for the [Glyphs font editor](https://glyphsapp.com/), by Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
 ## Contents
 
