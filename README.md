@@ -2,6 +2,8 @@
 
 Plugins for the [Glyphs font editor](https://glyphsapp.com/), by Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
+https://resistenza.es/glyphs/
+
 ## Contents
 
 - [**🔢 Numeratore**](https://github.com/rsztype/Numeratore) `v2.04` — adds an Increase Vers. switch to the inspector that increments a font's version by `0.001` and saves on every export. Living in its own repository.
