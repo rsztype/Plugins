@@ -8,6 +8,8 @@ This is a plugin for the [Glyphs font editor](https://glyphsapp.com/). It films 
 
 A font with no axes is not turned away. It is filmed as the static font of the master in front, and the lanes become the two things such a font can still do: its size and its tracking.
 
+<img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, the word on the stage, and one lane per axis underneath." title="Kinomat screenshot" width="720">
+
 ### Installation
 
 1. Unzip the download and double-click `Kinomat.glyphsPlugin` — Glyphs will offer to install it. (Alternatively, drop it into `~/Library/Application Support/Glyphs 3/Plugins/` or `~/Library/Application Support/Glyphs 4/Plugins/`.)
