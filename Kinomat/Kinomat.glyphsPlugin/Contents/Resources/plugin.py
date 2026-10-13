@@ -3332,22 +3332,21 @@ class KINOMAT(object):
         self.addTitleInfo(window)
 
     def titleLine(self):
-        """What stands beside the name in the title bar: the font, which of
-        its settings is being filmed, and how many axes that one has. Made
-        apart from the label so it can be written again when the setting
-        changes under a window that is not being rebuilt."""
-        if self.static:
-            # which master the film is of: with styles kept as masters,
-            # the name of the font alone does not say
-            text = "  %s  " % " · ".join(part for part in (
-                self.font.familyName or "Font", self.masterName, "static")
-                if part)
-        else:
-            text = "  %s  " % " · ".join(part for part in (
-                self.font.familyName or "Font", self.vfName,
-                "%d %s" % (len(self.axes),
-                           "axis" if len(self.axes) == 1 else "axes"))
-                if part)
+        """
+        What stands beside the name in the title bar: the family the font goes
+        out under, and nothing else.
+
+        It used to carry the setting being filmed and the count of axes as
+        well. Both are on the panel already \u2014 the setting in FONT \u25b8
+        Export, the axes one lane each \u2014 and up here they only made the
+        line long: a document whose settings make two families said the family
+        twice, "Monologo \u00b7 Monologo Serif \u00b7 1 axis", and ran out of
+        title bar, in under the key.
+
+        Made apart from the label so it can be written again under a window
+        that is not being rebuilt.
+        """
+        text = "  %s  " % (self.font.familyName or "Font")
         line = NSMutableAttributedString.alloc().init()
         # the two runs share a baseline, not a centre: a 9pt bullet sits
         # a point below the middle of 11pt text. Measured, not guessed
@@ -3366,6 +3365,9 @@ class KINOMAT(object):
         frame = label.frame()
         label.setFrame_(((frame.origin.x, frame.origin.y),
                          (line.size().width + 16, frame.size.height)))
+        # the key stands where the label ends, so it has to be put there again
+        # whenever the label changes width
+        self.paintKey()
 
     def addTitleInfo(self, window):
         """The font, its axes and the key, in the right of the title bar."""
