@@ -6,6 +6,8 @@ https://resistenza.es/glyphs/
 
 ## Contents
 
+- [**🎥 Kinomat**](Kinomat/) `v0.59` — films the font you are drawing: a word moving along its own variable axes, out as MP4, GIF or a PNG sequence. No timeline — one lane per axis, from and to.
+
 - [**🔢 Numeratore**](https://github.com/rsztype/Numeratore) `v2.04` — adds an Increase Vers. switch to the inspector that increments a font's version by `0.001` and saves on every export. Living in its own repository.
 
 - [**🔢 Increase Font Version on Export**](Increase%20Font%20Version%20on%20Export/) `v1.0` — like Numeratore, but without the palette: a real tick box in Font Info's Custom Parameters, no interface of its own.

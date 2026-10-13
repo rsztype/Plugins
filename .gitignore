@@ -1,0 +1,12 @@
+# Not published: these live here as working copies only, and Glyphs runs
+# them straight from this folder through a symlink.
+Largo/
+Peso/
+SidebarIncreaser/
+
+# Python leaves these next to every plug-in it loads
+__pycache__/
+*.pyc
+
+.DS_Store
+LilloCirillo/
