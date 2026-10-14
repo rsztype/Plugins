@@ -10,6 +10,14 @@ A font with no axes is not turned away. It is filmed as the static font of the m
 
 <img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, the word on the stage, and one lane per axis underneath." title="Kinomat screenshot" width="720">
 
+### Final result
+
+The film that panel made, as it came out: *Industria Serif*, its two axes travelling together over a photograph, 15 seconds of it.
+
+<img src="Kinomat.gif" alt="A capital R in Industria Serif, widening and growing heavier over an orange photograph, back and forth." title="Kinomat — final result" width="320">
+
+[The MP4 it was written as](Kinomat.mp4) — 1080 × 1920, 30 fps. The GIF above is that film cut down to fit on this page.
+
 ### Installation
 
 1. Unzip the download and double-click `Kinomat.glyphsPlugin` — Glyphs will offer to install it. (Alternatively, drop it into `~/Library/Application Support/Glyphs 3/Plugins/` or `~/Library/Application Support/Glyphs 4/Plugins/`.)
