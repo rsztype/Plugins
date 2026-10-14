@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.62** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.63** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -36,7 +36,7 @@ With a single variable setting, or none, there is nothing to choose and the row 
 
 Changing it re-reads the font and rebuilds the lanes around the new axes. Everything else you set is carried across, and a lane whose axis the new setting does not have is left behind, named in the status line.
 
-With no variable setting at all, Kinomat films a variable font made up on the spot — every master, nothing switched off. It comes out right, but it is not the font the document would export, and the panel says so where the chooser would be. Add a Variable Instance in *Font Info ▸ Exports* and that one is filmed instead.
+With no variable font export at all, Kinomat says so — on opening, and again where the chooser would be — and films a variable font made up on the spot: every master, with nothing switched off. It comes out right, but it is not the font the document would export. Add one in *Font Info ▸ Exports* and that one is filmed instead.
 
 ### What the font it films is
 

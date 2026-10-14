@@ -2419,6 +2419,18 @@ class KINOMAT(object):
             "" if shown == what else " (%s)" % what))
         self.w.status.set(note)
 
+        # And said out loud, once, on opening: a line in the panel is easy to
+        # walk past, and this one changes which font is being looked at.
+        if not variableSettings(self.font) and not self.static:
+            Message("Kinomat",
+                    "This document has no variable font export.\n\n"
+                    "Kinomat is filming a variable font made up on the spot: "
+                    "every master, with nothing switched off. It comes out "
+                    "right, but it is not the font the document would "
+                    "export.\n\n"
+                    "Add a variable font export in Font Info \u25b8 Exports and "
+                    "that one is filmed instead.")
+
     # -- window --------------------------------------------------------------
 
     # -- the pieces the panel is made of --------------------------------------
@@ -2719,8 +2731,8 @@ class KINOMAT(object):
                                   self.divider("divFont", y + 8), "FONT")
             self.rowLabel("lbSetting", y, "Export")
             self.caption("noSetting", FIELD_X, y - 2, FIELD_W,
-                         "No Variable Instance \u2014 filming a temporary one. "
-                         "Add one in Font Info \u25b8 Exports.",
+                         "No variable font export \u2014 filming a temporary "
+                         "one. Add one in Font Info \u25b8 Exports.",
                          ACCENT_TEXT, 11, height=34, wraps=True)
             y += 30
         elif len(self.settingNames) > 1:
