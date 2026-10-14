@@ -4,59 +4,89 @@
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
-This is a plugin for the [Glyphs font editor](https://glyphsapp.com/). It films the font you are drawing: a word travelling along its own variable axes. No timeline and no keyframes — each axis gets a lane, with a **from** and a **to**.
+A plugin for the [Glyphs font editor](https://glyphsapp.com/) that films the font you are drawing: a word travelling along its own variable axes, over a colour or over a photograph, out as MP4, GIF or a PNG sequence. No timeline and no keyframes — each axis gets a lane, with a **from** and a **to**.
 
-**Exporting the film — MP4, GIF or PNG sequence — needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: **[get the key — €19](https://buy.stripe.com/5kQ5kD5SX38m19New9eQM05)**. The same key opens the tools at [resistenza.es/tools](https://resistenza.es/tools/).
+**Exporting the film needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: **[get the key — €19](https://buy.stripe.com/5kQ5kD5SX38m19New9eQM05)**. The same key opens the tools at [resistenza.es/tools](https://resistenza.es/tools/).
 
 <img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, the word on the stage, and one lane per axis underneath." title="Kinomat screenshot" width="720">
 
 ### Final result
 
-The film that panel made, as it came out: *Industria Serif*, its two axes travelling together over a photograph, 15 seconds of it.
-
 <img src="Kinomat.gif" alt="A capital R in Industria Serif, widening and growing heavier over an orange photograph, back and forth." title="Kinomat — final result" width="320">
 
-[The MP4 it was written as](Kinomat.mp4) — 1080 × 1920, 30 fps. The GIF above is that film cut down to fit on this page.
+[The MP4 it was written as](Kinomat.mp4) — 1080 × 1920, 30 fps.
 
 ### Installation
 
-1. Unzip the download and double-click `Kinomat.glyphsPlugin` — Glyphs will offer to install it. (Alternatively, drop it into `~/Library/Application Support/Glyphs 3/Plugins/` or `~/Library/Application Support/Glyphs 4/Plugins/`.)
+Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*, or ⌘K.
 
-2. Restart Glyphs.app.
+The Pro key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
-3. The key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
+### The panel
 
-### Usage Instructions
+**PROJECT** — `Save…` and `Open…` write and read a `.rsztools` project: every setting below, the font excluded, since a project takes the font of the Glyphs file that is open. *Pro.*
 
-1. Open a font and choose *Window ▸ Kinomat*, or press ⌘K.
-2. Type a word in the box — it opens on the font's own name.
-3. Set each lane's **from** and **to**, the ones left ticked are the ones that move.
-4. Set the canvas, the paper and the ink, how long the film runs and how fast.
-5. **Export MP4**, **GIF** or **PNG sequence**.
+**FONT** — `Export` picks which of the document's variable exports is filmed, naming each one, with the family in front where they do not all make the same one. The row appears only when there is more than one to choose. Changing it rebuilds the lanes around the new axes and carries the rest of the panel across.
 
-The panel opens running, so the word is already moving while you set the rest.
+A document with axes **needs a variable font export** in *Font Info ▸ Exports*: that is the font Kinomat films, and without one it says so and does not open.
 
-Under *Align* are two boxes for the word's ligatures: **liga**, the standard ones, with clig along with them, and **dlig**, the discretionary ones a font offers and waits to be asked for. They open on and off, as a font expects. The line is measured with the same font it is drawn with, so turning them changes the width the word is centred on too.
+**TEXT**
 
-The MP4 is written in **H.264**, which plays everywhere — browsers, phones, anything that takes a film. The button beside the size switches it to HEVC: a finer edge on coloured letters, and a film that plays on Macs, iPhones and Safari and nowhere else.
+| | |
+|---|---|
+| the box | what is filmed, one line per line. It opens on the font's own name |
+| `Size` | in points, on the canvas — with **Fit width** it is set for you, as wide as the canvas allows |
+| `Leading` | the distance between lines, as a percentage |
+| `Cycle` | instead of the word, the font's glyphs one after another, components included |
+| `Tracking` | letter-spacing, per thousand of the em, on top of the font's own kerning |
+| `Align` | left, centre, right |
+| `Ligatures` | **liga** standard ones, clig with them · **dlig** the discretionary ones. Measured as they are drawn |
 
-### Which export is filmed
+**CANVAS**
 
-A document can hold more than one variable setting — a Roman and a Stencil, each cancelling the other's masters, or a Serif and a Sans built over the same masters. They are different fonts, with axes of their own, and the panel cannot guess which one you mean. So it asks: a row **FONT ▸ Export** appears in the settings, naming each setting, with the family in front of it where the settings do not all make the same one.
+| | |
+|---|---|
+| `Preset` | Reel / Story 9:16 · Post 1:1 · Post 4:5 · Post 5:4 · Landscape 16:9 · Square 2000 · Custom |
+| `Size` | width × height in pixels, if none of those fits |
+| `Paper`, `Ink` | the two colours, by picker or by hex. The **⇄** between them is the film in negative |
+| `Media` | an image or a video behind the word — png, jpg, heic, tif, gif, bmp, webp · mov, mp4, m4v. **✕** takes it away. *Pro* |
+| `Real time` | a video behind sets the film's length and speed; switched off, Duration and fps are yours again |
+| `Zoom`, `Rotate`, `Speed` | how large the media is drawn, which way round, and how fast a video runs |
+| `Colorize` | the media in two colours of your choosing — one for its darks, one for its lights — with its own **⇄** |
+| `Bright`, `Contrast` | over the media only: the word is never touched |
 
-With a single variable setting, or none, there is nothing to choose and the row is not there.
+**MOTION**
 
-Changing it re-reads the font and rebuilds the lanes around the new axes. Everything else you set is carried across, and a lane whose axis the new setting does not have is left behind, named in the status line.
+| | |
+|---|---|
+| `Duration` | seconds, and `fps` frames a second |
+| `Easing` | Linear · Ease In · Ease Out · Ease In-Out · Sine In-Out · Expo In-Out · Back In-Out · Elastic Out · Bounce Out |
+| `Loop` | **Ping-pong** out and back · **Restart** out and from the start again · **Play once** |
+| `Animate` | **Whole** the text as one · **Words** · **Letters**, each piece a step behind the one before. A single word has nothing to divide, and the panel says so |
+| `Repeat` | how many times the loop runs in the exported file |
 
-A document with axes but nothing in Exports to build from does not open the panel at all: Kinomat says that the variable font export is missing and stops. It used to make one up on the spot, over every master with nothing switched off — which came out right and was not the font the document exports, and what is on the screen is taken for the font.
+**THE LANES** — one per axis, or, for a font with no axes, Size and Tracking instead.
 
-### What the font it films is
+| | |
+|---|---|
+| the tick beside the name | this axis moves. Unticked, it stands still on its **from** |
+| `from → to` | where the axis starts and ends. The diamonds on the track do the same by hand |
+| the number in orange | where the axis is, right now, in the frame on the stage |
+| `Alternate` | the lanes one after another, each adding to the ones before |
+| `Random` | every lane starts from its own point of the loop, drawn when it was ticked |
+| `Sliders` | draws the lanes in the film itself. With it on, each lane gets a **Hide** box to leave its own slider out |
 
-Kinomat does not draw from the masters: it exports the font, as Font Info would, and films that — filters, custom parameters and features included. So the film shows the font as it goes out, not the drawing. To keep the wait short, only the glyphs the word needs are exported; type a letter that was not in it and the missing ones are added, once the typing stops.
+**THE BAR** — `Export MP4`, `GIF`, `PNG sequence`. *Pro.*
+
+Beside them, how large the film comes out — **1×** the canvas, 1.5×, 2× — and the codec: **H.264**, which plays everywhere, or **HEVC**, a finer edge on coloured letters and a film that plays on Apple's machines and nowhere else. The status line says what was written, how large, and in which of the two.
+
+### What is filmed
+
+Not the masters: Kinomat exports the font, as Font Info would, filters and parameters and features included, and films that. So the film shows the font as it goes out, not the drawing. Only the glyphs the text needs are exported, which is quick; type a letter that was not in it and the missing ones are added once the typing stops.
 
 ### Requirements
 
-The plugin requires Glyphs 3 or Glyphs 4, running on macOS 10.15 or later. MP4 and GIF are written by the system's own encoders, so nothing else has to be installed.
+Glyphs 3 or Glyphs 4, macOS 10.15 or later. MP4 and GIF are written by the system's own encoders, so nothing else has to be installed.
 
 ### License
 
