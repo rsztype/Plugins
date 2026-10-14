@@ -6,7 +6,7 @@ By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
 This is a plugin for the [Glyphs font editor](https://glyphsapp.com/). It films the font you are drawing: a word travelling along its own variable axes. No timeline and no keyframes — each axis gets a lane, with a **from** and a **to**.
 
-**Exporting the film — MP4, GIF or PNG sequence — needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: [resistenza.es/tools](https://resistenza.es/tools/).
+**Exporting the film — MP4, GIF or PNG sequence — needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: **[get the key — €19](https://buy.stripe.com/5kQ5kD5SX38m19New9eQM05)**. The same key opens the tools at [resistenza.es/tools](https://resistenza.es/tools/).
 
 <img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, the word on the stage, and one lane per axis underneath." title="Kinomat screenshot" width="720">
 
