@@ -2355,9 +2355,8 @@ class KINOMAT(object):
         if varied and not variableSettings(self.font):
             Message("Kinomat",
                     "This document has no variable font export.\n\n"
-                    "Kinomat films the font as it goes out, so there has to "
-                    "be one to film. Add it in Font Info \u25b8 Exports, with "
-                    "the + at the foot of the list, and open Kinomat again.")
+                    "Add one in Font Info \u25b8 Exports, then open Kinomat "
+                    "again.")
             return
         staticOf = None                 # the master a static font is of
         # only what a film of the box needs goes out, and the box opens on the
