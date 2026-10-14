@@ -2346,6 +2346,19 @@ class KINOMAT(object):
         # what a static font still has.
         master, self.masterName = lookedAt(self.font)
         varied = variableDesign(self.font)
+        # A design space with nothing in Exports to build from: the panel used
+        # to make a variable font up on the spot, over every master with
+        # nothing switched off. It came out right and was not the font the
+        # document exports, which is worse than not opening \u2014 what is on
+        # the screen is taken for the font. So it says what is missing, and
+        # stops.
+        if varied and not variableSettings(self.font):
+            Message("Kinomat",
+                    "This document has no variable font export.\n\n"
+                    "Kinomat films the font as it goes out, so there has to "
+                    "be one to film. Add it in Font Info \u25b8 Exports, with "
+                    "the + at the foot of the list, and open Kinomat again.")
+            return
         staticOf = None                 # the master a static font is of
         # only what a film of the box needs goes out, and the box opens on the
         # font's name: a few dozen glyphs instead of the whole font
@@ -2418,18 +2431,6 @@ class KINOMAT(object):
             VERSION or "?", note, time.time() - ready,
             "" if shown == what else " (%s)" % what))
         self.w.status.set(note)
-
-        # And said out loud, once, on opening: a line in the panel is easy to
-        # walk past, and this one changes which font is being looked at.
-        if not variableSettings(self.font) and not self.static:
-            Message("Kinomat",
-                    "This document has no variable font export.\n\n"
-                    "Kinomat is filming a variable font made up on the spot: "
-                    "every master, with nothing switched off. It comes out "
-                    "right, but it is not the font the document would "
-                    "export.\n\n"
-                    "Add a variable font export in Font Info \u25b8 Exports and "
-                    "that one is filmed instead.")
 
     # -- window --------------------------------------------------------------
 
@@ -2722,20 +2723,7 @@ class KINOMAT(object):
         # So the panel asks. With a single setting, or none, there is nothing
         # to choose and the row is not there at all.
         self.settingNames = settingLabels(self.font)
-        if not self.settingNames and not self.static:
-            # No variable setting at all, and axes all the same: the film is of
-            # a variable font made up on the spot, over every master and with
-            # nothing switched off. It comes out right, but it is not the font
-            # the document would export, and nothing on the panel said so.
-            y = self.sectionTitle("hdFont", GUTTER,
-                                  self.divider("divFont", y + 8), "FONT")
-            self.rowLabel("lbSetting", y, "Export")
-            self.caption("noSetting", FIELD_X, y - 2, FIELD_W,
-                         "No variable font export \u2014 filming a temporary "
-                         "one. Add one in Font Info \u25b8 Exports.",
-                         ACCENT_TEXT, 11, height=34, wraps=True)
-            y += 30
-        elif len(self.settingNames) > 1:
+        if len(self.settingNames) > 1:
             y = self.sectionTitle("hdFont", GUTTER,
                                   self.divider("divFont", y + 8), "FONT")
             self.rowLabel("lbSetting", y - 1, "Export")
