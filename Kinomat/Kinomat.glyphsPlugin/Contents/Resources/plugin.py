@@ -3629,6 +3629,23 @@ class KINOMAT(object):
         return dict((ident, a + (b - a) * progress)
                     for ident, a, b in self.cfg["ranges"])
 
+    def valuesAtPhase(self, phase):
+        """
+        Where the axes stand at a point of the cycle, the easing applied after
+        the point is chosen and not before.
+
+        axisValues() takes the progress a frame is drawn at, which in the
+        plain modes is already eased and already turned back on itself. A
+        piece that lags behind the others has to be delayed in the phase and
+        eased afterwards: delaying the eased curve instead, and wrapping it,
+        sent the piece from one end of its range to the other in a single
+        frame \u2014 426 units of weight, twice a cycle, measured.
+        """
+        if self.cfg.get("alternate") or self.cfg.get("random"):
+            return self.axisValues(phase)
+        return self.axisValues(
+            phaseToProgress(phase % 1.0, self.cfg["mode"], self.cfg["ease"]))
+
     def randomValues(self, phase):
         """
         Every lane goes the same way round the loop — out and back, or over
@@ -3861,7 +3878,7 @@ class KINOMAT(object):
     def canvasSize(self):
         return self.cfg["canvas"]
 
-    def renderAt(self, progress, w, h, size, at=None):
+    def renderAt(self, progress, w, h, size, at=None, phase=None):
         """A frame at that point of the cycle; at is its time in the film, in
         seconds, which a video backdrop takes its picture from."""
         c = self.cfg
@@ -3889,8 +3906,11 @@ class KINOMAT(object):
                 # the zoom and the turn already in it: it is drawn as it is
                 backdrop = self.tinted(backdrop, w, h, c["tint"], zoom, turn)
                 zoom, turn = 1.0, 0.0
+        # the frame is drawn at the eased progress, but the pieces are
+        # delayed in the phase: see valuesAtPhase
         return renderFrame(self.baseFont, w, h, lines, size, c["lead"],
-                           self.axisValues, progress,
+                           self.valuesAtPhase,
+                           progress if phase is None else phase,
                            c["bg"], c["fg"], c["align"], c["unit"], c["track"],
                            self.sliderInfo(progress), backdrop, zoom, turn,
                            c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
@@ -3938,7 +3958,8 @@ class KINOMAT(object):
             self.place(self.w.canvasBack, rect)
 
         cg = self.renderAt(progress, int(pw * bs), int(ph * bs),
-                           self.cfg["size"] * fit * bs, at=self.clock)
+                           self.cfg["size"] * fit * bs, at=self.clock,
+                           phase=self.phase)
         img = NSImage.alloc().initWithCGImage_size_(cg, (pw, ph))
         self.w.preview.setImage(imageObject=img)
 
@@ -4270,7 +4291,8 @@ class KINOMAT(object):
         for i in range(n):
             with objc.autorelease_pool():
                 frames.append(self.renderAt(self.progressAt(i / float(n)),
-                                            cw, ch, size, at=i / fps))
+                                            cw, ch, size, at=i / fps,
+                                            phase=i / float(n)))
         return frames, cw, ch
 
     def filmFrames(self, repeats=1):
@@ -4301,7 +4323,8 @@ class KINOMAT(object):
             for k in range(n * repeats):
                 with objc.autorelease_pool():
                     frame = self.renderAt(self.progressAt((k % n) / float(n)),
-                                          dw, dh, size * grow, at=k / fps)
+                                          dw, dh, size * grow, at=k / fps,
+                                          phase=(k % n) / float(n))
                     if step > 1:
                         frame = shrunk(frame, fw, fh)
                 yield frame
