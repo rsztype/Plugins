@@ -26,8 +26,6 @@ The film that panel made, as it came out: *Industria Serif*, its two axes travel
 
 3. The key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
-`Kinomat.glyphsTool` is optional and installs the same way: it puts Kinomat's icon in the toolbar, and opens the same panel. Nothing else.
-
 ### Usage Instructions
 
 1. Open a font and choose *Window ▸ Kinomat*, or press ⌘K.
