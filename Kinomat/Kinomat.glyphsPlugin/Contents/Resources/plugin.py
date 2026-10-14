@@ -1689,10 +1689,19 @@ def _generate(font, folder, master=None, keep=None, setting=None):
         instance = GSInstance()
         instance.name = "Kinomat"
         if not static:
+            # Glyphs 4 refuses `instance.type = \u2026`: the property has no
+            # setter, it raises, and the older spelling underneath leaves the
+            # instance single \u2014 which exports a static font. The panel
+            # then offered Size and Tracking where the font's own axes should
+            # have been, to anyone whose document has no variable setting of
+            # its own in Exports. setType_ is the one that takes.
             try:
-                instance.type = INSTANCE_VARIABLE
-            except (AttributeError, TypeError):
-                instance.variableStyleName = "Regular"
+                instance.setType_(INSTANCE_VARIABLE)
+            except Exception:
+                try:
+                    instance.type = INSTANCE_VARIABLE
+                except (AttributeError, TypeError):
+                    instance.variableStyleName = "Regular"
         if keep is not None:
             try:
                 instance.customParameters["Keep Glyphs"] = sorted(keep)
