@@ -2710,7 +2710,20 @@ class KINOMAT(object):
         # So the panel asks. With a single setting, or none, there is nothing
         # to choose and the row is not there at all.
         self.settingNames = settingLabels(self.font)
-        if len(self.settingNames) > 1:
+        if not self.settingNames and not self.static:
+            # No variable setting at all, and axes all the same: the film is of
+            # a variable font made up on the spot, over every master and with
+            # nothing switched off. It comes out right, but it is not the font
+            # the document would export, and nothing on the panel said so.
+            y = self.sectionTitle("hdFont", GUTTER,
+                                  self.divider("divFont", y + 8), "FONT")
+            self.rowLabel("lbSetting", y, "Export")
+            self.caption("noSetting", FIELD_X, y - 2, FIELD_W,
+                         "No Variable Instance \u2014 filming a temporary one. "
+                         "Add one in Font Info \u25b8 Exports.",
+                         ACCENT_TEXT, 11, height=34, wraps=True)
+            y += 30
+        elif len(self.settingNames) > 1:
             y = self.sectionTitle("hdFont", GUTTER,
                                   self.divider("divFont", y + 8), "FONT")
             self.rowLabel("lbSetting", y - 1, "Export")
