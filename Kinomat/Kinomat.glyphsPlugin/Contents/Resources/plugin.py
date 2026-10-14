@@ -304,13 +304,32 @@ def laneShares(values, track):
     return scale, track + values.pop(TRACK_LANE, 0.0), values
 
 
-def variedFont(baseFont, size, variations):
+def featureSettings(features):
+    """The OpenType switches as CoreText wants them: a list of tag and value.
+
+    Carried to the font rather than set on the line, and handed to every one
+    of them \u2014 a line measured with its ligatures and drawn without would
+    be centred on a width it never had.
+    """
+    tagKey = getattr(CoreText, "kCTFontOpenTypeFeatureTag", None)
+    valKey = getattr(CoreText, "kCTFontOpenTypeFeatureValue", None)
+    if not features or None in (tagKey, valKey):
+        return None
+    return [{tagKey: tag, valKey: 1 if on else 0}
+            for tag, on in sorted(dict(features).items())]
+
+
+def variedFont(baseFont, size, variations, features=None):
     # only real axes reach CoreText: the lanes of a static font travel in the
     # same dict, and a name where an axis number belongs is not for it
     axes = dict((k, v) for k, v in dict(variations).items()
                 if not isinstance(k, str))
-    desc = CoreText.CTFontDescriptorCreateWithAttributes(
-        {CoreText.kCTFontVariationAttribute: axes})
+    attrs = {CoreText.kCTFontVariationAttribute: axes}
+    setKey = getattr(CoreText, "kCTFontFeatureSettingsAttribute", None)
+    wanted = featureSettings(features)
+    if setKey is not None and wanted:
+        attrs[setKey] = wanted
+    desc = CoreText.CTFontDescriptorCreateWithAttributes(attrs)
     return CoreText.CTFontCreateCopyWithAttributes(baseFont, size, None, desc)
 
 
@@ -367,11 +386,11 @@ def black():
     return _BLACK[0]
 
 
-def measureLines(baseFont, lines, variations, track=0.0):
+def measureLines(baseFont, lines, variations, track=0.0, features=None):
     """Widest line and cap height at 1000 upm, tracking included — and grown
     by a static font's Size lane, so that a fit holds at its largest."""
     scale, track, variations = laneShares(variations, track)
-    f = variedFont(baseFont, 1000.0, variations)
+    f = variedFont(baseFont, 1000.0, variations, features)
     kern = track                    # at 1000 upm a unit per mille is a point
     widest = 0.0
     for txt in lines:
@@ -391,13 +410,13 @@ def measureLines(baseFont, lines, variations, track=0.0):
 OVERSHOOT = 0.05
 
 
-def measureInk(baseFont, lines, variations, track=0.0):
+def measureInk(baseFont, lines, variations, track=0.0, features=None):
     """How far the ink reaches above the first line's baseline and below the
     last one's, at 1000 upm: accents and ascenders over the caps, descenders
     under the line — what the cap height alone leaves out, and what a frame
     would cut. With the Size lane's growth beside it, for the fit."""
     scale, track, variations = laneShares(variations, track)
-    f = variedFont(baseFont, 1000.0, variations)
+    f = variedFont(baseFont, 1000.0, variations, features)
 
     def reach(txt):
         box = CoreText.CTLineGetBoundsWithOptions(
@@ -518,7 +537,7 @@ def shrunk(image, w, h):
 def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
                 bgColor, fgColor, align, unit="Whole", track=0.0, sliders=None,
                 backdrop=None, zoom=1.0, turn=0.0, bright=0.0, contrast=0.0,
-                ink=None):
+                ink=None, features=None):
     cs = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
     ctx = Quartz.CGBitmapContextCreate(None, int(w), int(h), 8, 0, cs,
                                        Quartz.kCGImageAlphaPremultipliedLast)
@@ -534,7 +553,8 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
     # stand on instead, and the block keeps its place while they do.
     grown, _, whole = laneShares(variationsAt(progress), track)
     body = size * (grown if unit == "Whole" else 1.0)
-    capH = CoreText.CTFontGetCapHeight(variedFont(baseFont, body, whole))
+    capH = CoreText.CTFontGetCapHeight(
+        variedFont(baseFont, body, whole, features))
     lead = body * leadPct / 100.0
     # The block is centred on what shows of it: from the caps — or the accents
     # and ascenders, where they stand higher — of the first line down to the
@@ -566,7 +586,9 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
             # tracking is written per thousand of the em, the way a type
             # designer says it; CoreText wants points
             kern = size * scale * tracked / 1000.0
-            line = _line(piece, variedFont(baseFont, size * scale, variations),
+            line = _line(piece,
+                         variedFont(baseFont, size * scale, variations,
+                                    features),
                          fgColor, kern)
             wid = CoreText.CTLineGetTypographicBounds(line, None, None, None)[0]
             drawn.append((line, wid))
@@ -2820,7 +2842,27 @@ class KINOMAT(object):
             self.alignButtons.append(control)
         self.alignIndex = 1
         self.paintAlign()
-        y += 26
+        y += 26 + 8
+
+        # the ligatures the word is set with. liga is on, as CoreText has it
+        # and as the font asks; dlig is off, because a discretionary ligature
+        # is one the designer wants asked for, not taken.
+        self.rowLabel("lbLiga", y, "Ligatures")
+        self.ligaCheck = self.check("ligaBox", FIELD_X, y, 62, "liga", True,
+                                    self.settingsChanged)
+        self.dligCheck = self.check("dligBox", FIELD_X + 68, y, 62, "dlig",
+                                    False, self.settingsChanged)
+        for box, says in ((self.ligaCheck, "Standard ligatures, liga and clig "
+                                           "with it: the ones the font means "
+                                           "to use on their own."),
+                          (self.dligCheck, "Discretionary ligatures, dlig: the "
+                                           "ones a font offers and waits to be "
+                                           "asked for.")):
+            try:
+                box.setToolTip_(says)
+            except Exception:
+                pass
+        y += FIELD_H
 
         # MOTION used to stand here, between TEXT and CANVAS. It is down with
         # the lanes now: what moves and how, read on one line
@@ -3478,6 +3520,11 @@ class KINOMAT(object):
             "lead": self.clamped(self.w.lead, 110, 40, 300),
             "track": self.clamped(self.w.track, 0, -300, 1000),
             "align": ALIGNMENTS[self.alignIndex],
+            # clig goes with liga: a contextual ligature is a ligature, and
+            # nobody wants two tick boxes to say one thing
+            "features": {"liga": bool(self.ligaCheck.on),
+                         "clig": bool(self.ligaCheck.on),
+                         "dlig": bool(self.dligCheck.on)},
             "bg": cgColorFromNSColor(self.w.bg.get()),
             "fg": cgColorFromNSColor(self.w.fg.get()),
             # Colorize: the backdrop's darks and lights, or None when it is off
@@ -3762,9 +3809,10 @@ class KINOMAT(object):
             variations = self.axisValues(position)
             for item in candidates:
                 w, c = measureLines(self.baseFont, item, variations,
-                                    self.cfg["track"])
+                                    self.cfg["track"], self.cfg["features"])
                 top, below, grown = measureInk(self.baseFont, item, variations,
-                                               self.cfg["track"])
+                                               self.cfg["track"],
+                                               self.cfg["features"])
                 found["widest"] = max(found["widest"], w)
                 found["capH"] = max(found["capH"], c)
                 found["top"] = max(found["top"], top * grown)
@@ -3832,7 +3880,8 @@ class KINOMAT(object):
                            self.axisValues, progress,
                            c["bg"], c["fg"], c["align"], c["unit"], c["track"],
                            self.sliderInfo(progress), backdrop, zoom, turn,
-                           c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"))
+                           c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
+                           c.get("features"))
 
     # -- preview -------------------------------------------------------------
 
@@ -4850,6 +4899,8 @@ class KINOMAT(object):
             "fit": bool(self.fitCheck.on),
             "leading": self.num(self.w.lead, 110.0),
             "cycle": bool(self.cycleCheck.on),
+            "liga": bool(self.ligaCheck.on),
+            "dlig": bool(self.dligCheck.on),
             "tracking": self.num(self.w.track, 0.0),
             "sliders": bool(self.sliderCheck.on),
             "filmSize": float(self.filmStep or 1.0),
@@ -5154,6 +5205,8 @@ class KINOMAT(object):
         tick("fit", self.fitCheck)
         number("leading", "lead")
         tick("cycle", self.cycleCheck)
+        tick("liga", self.ligaCheck)
+        tick("dlig", self.dligCheck)
         number("tracking", "track")
         tick("sliders", self.sliderCheck)
         if usable(data.get("filmSize")):

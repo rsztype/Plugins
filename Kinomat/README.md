@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.66** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.67** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -35,6 +35,8 @@ The film that panel made, as it came out: *Industria Serif*, its two axes travel
 5. **Export MP4**, **GIF** or **PNG sequence**.
 
 The panel opens running, so the word is already moving while you set the rest.
+
+Under *Align* are two boxes for the word's ligatures: **liga**, the standard ones, with clig along with them, and **dlig**, the discretionary ones a font offers and waits to be asked for. They open on and off, as a font expects. The line is measured with the same font it is drawn with, so turning them changes the width the word is centred on too.
 
 The MP4 is written in **H.264**, which plays everywhere — browsers, phones, anything that takes a film. The button beside the size switches it to HEVC: a finer edge on coloured letters, and a film that plays on Macs, iPhones and Safari and nowhere else.
 
