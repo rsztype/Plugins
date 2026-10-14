@@ -1052,7 +1052,7 @@ def writePNG(path, image):
     return Quartz.CGImageDestinationFinalize(dest)
 
 
-def writeMP4(path, images, fps, w, h):
+def writeMP4(path, images, fps, w, h, wantHEVC=False):
     import AVFoundation
     import CoreMedia
     if os.path.exists(path):
@@ -1124,11 +1124,18 @@ def writeMP4(path, images, fps, w, h):
         out[AVFoundation.AVVideoCompressionPropertiesKey] = squeeze
         return out
 
+    # H.264 first, and HEVC only when it is asked for. The Mac will encode
+    # HEVC whenever it is offered, so putting it first meant every film came
+    # out in it \u2014 and a film in HEVC 4:2:2 plays on Macs, iPhones and
+    # Safari and nowhere else: not Chrome, not Firefox, not Android, not the
+    # places these films are made for. A tenth of a pixel on the edge of a
+    # letter is not worth a film that will not open.
     settings, used = plain, "H.264"
-    for candidate, name in (
-            (hevcSettings("HEVC_Main42210_AutoLevel", fine), "HEVC 4:2:2"),
-            (hevcSettings(None, int(fine * 0.6)), "HEVC"),
-            (sharp, "H.264"), (tagged, "H.264")):
+    order = ((sharp, "H.264"), (tagged, "H.264"))
+    if wantHEVC:
+        order = ((hevcSettings("HEVC_Main42210_AutoLevel", fine), "HEVC 4:2:2"),
+                 (hevcSettings(None, int(fine * 0.6)), "HEVC")) + order
+    for candidate, name in order:
         if writer.canApplyOutputSettings_forMediaType_(
                 candidate, AVFoundation.AVMediaTypeVideo):
             settings, used = candidate, name
@@ -2310,6 +2317,7 @@ class KINOMAT(object):
     bright = 0.0                # and how much white or black lies over it
     contrast = 0.0              # and how far its light and dark stand apart
     filmStep = 1.0              # how large the film comes out beside the canvas
+    wantHEVC = False            # the MP4's codec: H.264 unless asked otherwise
     offsets = ()                # where each lane starts, with Random on
     realTime = True             # the film takes its time from the video behind
     ownTime = None              # the Duration and fps typed before it did
@@ -3178,6 +3186,21 @@ class KINOMAT(object):
             "a large screen. Larger is heavier to write; what will not fit "
             "inside 4096 is kept at the canvas.")
         self.paintFilmSize()
+
+        # which codec writes the MP4: H.264 plays everywhere, HEVC 4:2:2 at
+        # 10 bits carries the colour at full width and draws a finer edge on
+        # coloured letters \u2014 1.32 px against 1.43, measured \u2014 and
+        # plays on Apple's machines and nowhere else
+        x += 54 + 10
+        self.pill("codecPill", x, y, 62, 30, "H.264", self.stepCodec,
+                  fill=SURF_FIELD, border=LINE_FIELD, colour=INK_BUTTON,
+                  weight=NSFontWeightMedium)
+        self.w.codecPill.getNSButton().setToolTip_(
+            "Which codec writes the MP4. H.264 plays everywhere \u2014 "
+            "browsers, phones, anything that takes a film. HEVC draws a finer "
+            "edge on coloured letters and plays on Macs, iPhones and Safari, "
+            "and nowhere else.")
+        self.paintCodec()
 
         self.caption("status", laneR - 340, exportY + 19, 340, "",
                      INK_STATUS, 11, align=NSTextAlignmentRight, height=14)
@@ -4497,7 +4520,8 @@ class KINOMAT(object):
             repeats = int(self.clamped(self.w.loops, 3, 1, 20))
             once = MODES[self.w.mode.get()] == "Play once"
             frames, cw, ch = self.filmFrames(1 if once else repeats)
-            codec = writeMP4(path, frames, self.fps(), cw, ch)
+            codec = writeMP4(path, frames, self.fps(), cw, ch,
+                             wantHEVC=self.wantHEVC)
             if not codec:
                 raise Exception("AVAssetWriter did not finish writing.")
         except Exception as e:
@@ -4588,6 +4612,25 @@ class KINOMAT(object):
         self.brightSlider.setNeedsDisplay_(True)
         percent = int(round(self.bright * 100))
         self.w.brightNote.set("0%" if not percent else "%+d%%" % percent)
+
+    def stepCodec(self, sender=None):
+        """H.264 and HEVC, turn and turn about."""
+        self.wantHEVC = not self.wantHEVC
+        self.paintCodec()
+
+    def paintCodec(self):
+        """What it says, and \u2014 when it is the one that plays in fewer
+        places \u2014 that it is doing something."""
+        try:
+            control = self.w.codecPill
+        except Exception:
+            return
+        fine = bool(self.wantHEVC)
+        self.paintPill(control, "HEVC" if fine else "H.264",
+                       fill=ACCENT_TINT if fine else SURF_FIELD,
+                       border=ACCENT_RANGE if fine else LINE_FIELD,
+                       colour=ACCENT_TEXT if fine else INK_BUTTON,
+                       weight=NSFontWeightMedium)
 
     def stepFilmSize(self, sender=None):
         """Round to the next size the film can come out at."""
