@@ -572,8 +572,19 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
     top = (h + blockH) / 2.0
     margin = w * 0.05
 
+    # The pieces are numbered across the whole block, not from the start of
+    # each line. Numbered per line, three lines of one word each were three
+    # pieces all numbered 0, so all three sat at the same point of the cycle
+    # and Words looked exactly like Whole.
+    blocks = [splitUnits(txt, unit) for txt in lines]
+    pieceCount = sum(len(b) for b in blocks) or 1
+    firstOf, counted = [], 0
+    for block in blocks:
+        firstOf.append(counted)
+        counted += len(block)
+
     for i, txt in enumerate(lines):
-        pieces = splitUnits(txt, unit)
+        pieces = blocks[i]
         # each piece gets its own font at its own point in the cycle, and is
         # laid out after the one before. Whole is a single piece, so it draws
         # exactly as it always did.
@@ -582,7 +593,8 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
         kern = 0.0
         for k, piece in enumerate(pieces):
             scale, tracked, variations = laneShares(
-                variationsAt(unitProgress(progress, k, len(pieces))), track)
+                variationsAt(unitProgress(progress, firstOf[i] + k,
+                                          pieceCount)), track)
             # tracking is written per thousand of the em, the way a type
             # designer says it; CoreText wants points
             kern = size * scale * tracked / 1000.0
@@ -3122,7 +3134,8 @@ class KINOMAT(object):
         y += POPUP_H + 8
 
         self.rowLabel("lbUnit", y - 1, "Animate")
-        self.popup("unit", FIELD_X, y, FIELD_W, UNITS)
+        self.popup("unit", FIELD_X, y, FIELD_W, UNITS,
+                   callback=self.pickUnit)
         y += POPUP_H + 8
 
         self.rowLabel("lbRepeat", y, "Repeat")
@@ -3963,6 +3976,25 @@ class KINOMAT(object):
             self.timer = None
 
     # -- callbacks -----------------------------------------------------------
+
+    def pickUnit(self, sender=None):
+        """
+        Animate changed.
+
+        Words and Letters need something to divide. One word has nothing to
+        take turns with, and a switch that does nothing, saying nothing, reads
+        as a switch that is broken \u2014 so it says which it is.
+        """
+        self.settingsChanged()
+        unit = UNITS[self.w.unit.get()]
+        if unit == "Whole":
+            return
+        pieces = sum(len(splitUnits(line, unit))
+                     for line in (self.cfg.get("lines") or []))
+        if pieces < 2:
+            self.w.status.set(
+                "%s \u2014 there is one %s here, so it moves as a whole"
+                % (unit, "word" if unit == "Words" else "letter"))
 
     def pickAlign(self, index):
         self.alignIndex = index
