@@ -3583,6 +3583,23 @@ class KINOMAT(object):
     def previewFPS(self):
         return min(30, self.cfg["fps"])
 
+    def paintHides(self):
+        """
+        A lane's Hide box is there only while there are sliders to hide.
+
+        Hide leaves that lane's slider out of the film, and the Sliders box
+        \u2014 which opens unticked \u2014 decides whether any are drawn at
+        all. With it off, every Hide box in the panel does nothing, and a
+        column of boxes that do nothing reads as a column of boxes that are
+        broken.
+        """
+        on = bool(getattr(self, "sliderCheck", None)) and bool(self.sliderCheck.on)
+        for i in range(len(self.hideChecks)):
+            try:
+                getattr(self.w, "axHide%d" % i).show(on)
+            except Exception:
+                pass
+
     def sliderInfo(self, progress):
         """Un cursore per ogni asse in movimento, o niente se la casella e spenta.
 
@@ -4143,6 +4160,7 @@ class KINOMAT(object):
 
     def settingsChanged(self, sender=None):
         self.syncConfig()
+        self.paintHides()
         try:                          # the shadow panel is the paper colour
             self.w.canvasBack.getNSView().layer().setBackgroundColor_(
                 self.w.bg.get().CGColor())
