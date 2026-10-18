@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.70** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.71** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -23,6 +23,8 @@ Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Applic
 The Pro key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
 ### The panel
+
+The panel opens as you left it: every setting below is kept when the window closes, or when Glyphs quits with it open, and comes back the next time. Lanes return by axis tag, so a font with other axes keeps its own; media behind the word returns with the Pro key.
 
 **PROJECT** — `Save…` and `Open…` write and read a `.rsztools` project: every setting below, the font excluded, since a project takes the font of the Glyphs file that is open. *Pro.*
 

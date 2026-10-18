@@ -155,6 +155,10 @@ PROJECT_APP = "kinomat-glyphs"
 # again for no reason
 KEY_DEFAULT = "com.rsztype.CinemaVF.key"
 NAME_DEFAULT = "com.rsztype.CinemaVF.name"
+# the panel as it was left: the same data as a .rsztools project, kept in
+# Glyphs' preferences when the window closes and read back when it opens
+LAST_DEFAULT = "com.rsztype.Kinomat.lastSettings"
+OPEN_PANELS = []    # panels on screen, to remember them if Glyphs quits under them
 
 
 def verifyKey(key):
@@ -3280,6 +3284,11 @@ class KINOMAT(object):
         self._backing = self.backingScale()
         self.paintKey()
         self.settingsChanged()
+        if not getattr(self, "restoredLast", False):
+            self.restoredLast = True
+            self.restoreLast()
+            if self not in OPEN_PANELS:
+                OPEN_PANELS.append(self)
         # it opens running: the panel is about the movement, and asking for it
         # every time was a click that never had a reason not to happen
         self.togglePlay()
@@ -5387,11 +5396,42 @@ class KINOMAT(object):
         self.settingsChanged()
         return missing
 
+    def rememberLast(self):
+        """The panel as it is, into Glyphs' preferences: what a .rsztools
+        project would hold, so the next window opens where this one was left."""
+        try:
+            import json
+            Glyphs.defaults[LAST_DEFAULT] = json.dumps(self.projectData(), ensure_ascii=False)
+        except Exception as trouble:
+            print("Kinomat — settings not remembered: %s" % trouble)
+
+    def restoreLast(self):
+        """The settings the last window was closed with, back into this one.
+        Lanes go back by axis tag, so a font with other axes keeps its own;
+        media behind the word is Pro, and without a key it is left out."""
+        try:
+            import json
+            text = Glyphs.defaults.get(LAST_DEFAULT) or ""
+            data = json.loads(text) if text else None
+        except Exception:
+            data = None
+        if not isinstance(data, dict) or data.get("app") != PROJECT_APP:
+            return
+        if not self.isPro():
+            data.pop("backdrop", None)
+        try:
+            self.applyProject(data)
+        except Exception as trouble:
+            print("Kinomat — last settings not restored: %s" % trouble)
+
     def windowClosed(self, sender=None):
         # the panel built again around another variable setting closes its own
         # window on the way: the export it is about to show must stay
         if getattr(self, "rebuilding", False):
             return
+        self.rememberLast()
+        if self in OPEN_PANELS:
+            OPEN_PANELS.remove(self)
         self.stopTimer()
         self.stopStepping()
         self.cancelLater()
@@ -5499,6 +5539,9 @@ class KINOMATPlugin(GeneralPlugin):
 		self.sweeping = True
 
 	def kinomatWillQuit_(self, notification):
+		# a window still open when Glyphs quits never hears "close"
+		for panel in list(OPEN_PANELS):
+			panel.rememberLast()
 		emptyCache()
 
 	@objc.python_method
