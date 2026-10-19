@@ -286,6 +286,33 @@ def staticLanes():
     ]
 
 
+def shortTrouble(trouble):
+    """Glyphs' export error cut to what can be read beside the lanes: the
+    glyphs it names when they are not compatible, else its first words."""
+    text = " ".join(str(trouble).split())
+    marker = "not compatible:"
+    if marker in text:
+        names = text.split(marker, 1)[1].split("Can\u2019t")[0].split("Can't")[0]
+        names = [n.strip() for n in names.replace(".", " ").split(",") if n.strip()]
+        shown = ", ".join(names[:4]) + (" +%d" % (len(names) - 4) if len(names) > 4 else "")
+        return "not compatible: " + shown
+    return text[:60]
+
+
+def lanesFor(axes):
+    """
+    The panel's lanes: the font's axes, then Size and Tracking, always. With
+    no axes those two are the whole film and Tracking breathes from the start;
+    after real axes they wait, switched off, so a variable font films as it did
+    until one of them is ticked.
+    """
+    extra = staticLanes()
+    if axes:
+        for lane in extra:
+            lane["animate"] = False
+    return list(axes) + extra
+
+
 def laneKey(ax):
     """What a lane is known by in a project: an axis by its tag, a lane of a
     static font by its own name — "size" is not the SIZE axis a font can have."""
@@ -2392,18 +2419,15 @@ class KINOMAT(object):
         # what a static font still has.
         master, self.masterName = lookedAt(self.font)
         varied = variableDesign(self.font)
-        # A design space with nothing in Exports to build from: the panel used
-        # to make a variable font up on the spot, over every master with
-        # nothing switched off. It came out right and was not the font the
-        # document exports, which is worse than not opening \u2014 what is on
-        # the screen is taken for the font. So it says what is missing, and
-        # stops.
-        if varied and not variableSettings(self.font):
-            Message("Kinomat",
-                    "This document has no variable font export.\n\n"
-                    "Add one in Font Info \u25b8 Exports, then open Kinomat "
-                    "again.")
-            return
+        # A design space with nothing in Exports to build from. Making a
+        # variable font up on the spot, over every master, came out right and
+        # was not the font the document exports \u2014 what is on the screen is
+        # taken for the font. Refusing to open was no better. So the panel
+        # opens on the static font of the master in front, with Size and
+        # Tracking for lanes, and says in the panel itself what is missing.
+        self.noVariableExport = bool(varied and not variableSettings(self.font))
+        if self.noVariableExport:
+            varied = False
         staticOf = None                 # the master a static font is of
         # only what a film of the box needs goes out, and the box opens on the
         # font's name: a few dozen glyphs instead of the whole font
@@ -2432,6 +2456,7 @@ class KINOMAT(object):
                         # masters that looked like a design space and were
                         # not: why goes to the Macro output, and on we go
                         failed = trouble
+                        self.variableTrouble = shortTrouble(trouble)
                         print("Kinomat \u2014 no variable font, so the static "
                               "one of %s:\n%s" % (self.masterName, trouble))
                 if not self.vfPath:
@@ -2453,11 +2478,11 @@ class KINOMAT(object):
             Message("Kinomat", str(e))
             return
 
-        # no axes — one master, or a variable export that came out plain: the
-        # lanes are Size and Tracking instead, and all the rest works as ever
+        # Size and Tracking come after the axes, always; with no axes — one
+        # master, or a variable export that came out plain — they are all the
+        # lanes there are, and all the rest works as ever
         self.static = not self.axes
-        if self.static:
-            self.axes = staticLanes()
+        self.axes = lanesFor(self.axes)
 
         self.buildUI()
         # where the wait went. In the panel and not only in the Macro output:
@@ -2475,6 +2500,12 @@ class KINOMAT(object):
         print("Kinomat %s \u2014 %s \u00b7 panel in %.1f s%s" % (
             VERSION or "?", note, time.time() - ready,
             "" if shown == what else " (%s)" % what))
+        if getattr(self, "noVariableExport", False):
+            note = ("No variable export in Font Info \u25b8 Exports \u00b7 "
+                    "static %s" % self.masterName)
+        elif self.static and getattr(self, "variableTrouble", None):
+            note = "Variable export failed (%s) \u00b7 static %s" % (
+                self.variableTrouble, self.masterName)
         self.w.status.set(note)
 
     # -- window --------------------------------------------------------------
@@ -2901,7 +2932,7 @@ class KINOMAT(object):
         y += FIELD_H + 8
 
         colourY = y
-        for target, title, colour in (("bg", "Paper", "#0B0B0D"),
+        for target, title, colour in (("bg", "Stage", "#0B0B0D"),
                                       ("fg", "Ink", "#FF4D00")):
             self.rowLabel("lb" + target, y, title)
             well = vanilla.ColorWell((self.colOff + FIELD_X, y, 28, 24),
@@ -2925,10 +2956,14 @@ class KINOMAT(object):
                   "⇄", self.swapColours,
                   fill=SURF_FIELD, border=LINE_FIELD, colour=INK_BUTTON)
         self.w.colourSwap.getNSButton().setToolTip_(
-            "Paper and Ink change places: the film in negative")
+            "Stage and Ink change places: the film in negative")
 
+        # ---------------- BACKGROUND -----------------------------------------
         # a picture or a film behind the text, over the paper. Pro, as in the
-        # tools on the web
+        # tools on the web. A section of its own: Media and the rows it brings
+        # are what is behind the word, not the size of the frame
+        y = self.sectionTitle("hdBackground", GUTTER, self.divider("divBackground", y + 4),
+                              "BACKGROUND")
         self.rowLabel("lbBackdrop", y, "Media")
         self.pill("backdropPick", FIELD_X, y, FIELD_W - 32, FIELD_H, "",
                   self.chooseBackdrop)
@@ -2938,7 +2973,7 @@ class KINOMAT(object):
         self.pill("backdropClear", FIELD_X + FIELD_W - 24, y, 24, FIELD_H, "✕",
                   self.clearBackdrop, fill=SURF_FIELD, border=LINE_FIELD,
                   colour=INK_MUTED)
-        self.w.backdropClear.getNSButton().setToolTip_("No backdrop: the paper again")
+        self.w.backdropClear.getNSButton().setToolTip_("No backdrop: the stage colour again")
         self.paintBackdrop()
         y += FIELD_H + 8
 
@@ -2963,7 +2998,7 @@ class KINOMAT(object):
         self.w.zoomGroup.getNSView().addSubview_(self.zoomSlider)
         self.w.zoomGroup.getNSView().setToolTip_(
             "How large the image or video behind is drawn: 100% just covers "
-            "the frame, more grows into it, less leaves the paper round it")
+            "the frame, more grows into it, less leaves the stage colour round it")
         self.caption("zoomNote", FIELD_X + FIELD_W - 46, y + 4, 46, "100%",
                      INK_MUTED, 11, align=NSTextAlignmentRight)
         y += FIELD_H + 8
@@ -3152,10 +3187,12 @@ class KINOMAT(object):
         # instead, and the hint says why
         self.sectionTitle("hdAxes", laneX + 2, laneY + 54,
                           "SIZE · TRACKING" if self.static else "AXES", 160)
-        self.caption("axesHint", laneR - 260, laneY + 54, 260,
-                     "static font · no axes, so size and tracking move"
-                     if self.static else "drag handles to set FROM → TO",
-                     INK_FAINT, 10, align=NSTextAlignmentRight, height=13)
+        trouble = bool(getattr(self, "noVariableExport", False) or
+                       (self.static and getattr(self, "variableTrouble", None)))
+        self.caption("axesHint", laneR - 460, laneY + 52, 460, self.axesHintText(),
+                     ACCENT_TEXT if trouble else INK_FAINT, 12 if trouble else 10,
+                     align=NSTextAlignmentRight, height=16,
+                     weight=NSFontWeightBold if trouble else None)
         # how the lanes move, and whether their sliders are drawn in the frame:
         # the three of them stand with the lanes, after their title. Alternate
         # takes them one at a time; Random starts each somewhere else; the two
@@ -3499,7 +3536,13 @@ class KINOMAT(object):
                             "to type a new one")
             holder = NSView.alloc().initWithFrame_(
                 ((0, 0), (label.frame().size.width + 140, 28)))
-            label.setFrameOrigin_((0, 4))
+            # as tall as its line and centred on the key beside it (y 4, 20
+            # high): a 22-point field draws its text against the top, and the
+            # name stood higher than the button's title
+            import math
+            tall = math.ceil(line.size().height) + 2
+            label.setFrame_(((0, 4 + (20 - tall) / 2.0),
+                             (line.size().width + 16, tall)))
             holder.addSubview_(label)
             holder.addSubview_(key)
             self.titleHolder = holder
@@ -4136,8 +4179,19 @@ class KINOMAT(object):
         elif self.cfg.get("random"):
             self.w.axesHint.set("each lane starting somewhere else")
         else:
-            self.w.axesHint.set("static font \u00b7 no axes, so size and tracking move"
-                                if self.static else "drag handles to set FROM \u2192 TO")
+            self.w.axesHint.set(self.axesHintText())
+
+    def axesHintText(self):
+        """What the line beside the lanes' title says when nothing else is on:
+        a document with axes and no variable export is told so here, where the
+        lanes it gets instead are."""
+        if getattr(self, "noVariableExport", False):
+            return "No variable font export \u00b7 Size and Tracking move"
+        if self.static and getattr(self, "variableTrouble", None):
+            return "Variable export failed \u00b7 " + self.variableTrouble
+        if self.static:
+            return "static font \u00b7 no axes, so size and tracking move"
+        return "drag handles to set FROM \u2192 TO"
 
     def toggleAnimate(self, index):
         self.animate[index] = bool(self.axisChecks[index].on)
@@ -4184,10 +4238,17 @@ class KINOMAT(object):
         self.keepUp()
 
     def updateInfo(self):
-        self.w.status.set("Ready · %.1f s × %d · %d fps"
-                          % (self.cfg["duration"],
-                             int(self.clamped(self.w.loops, 3, 1, 20)),
-                             self.cfg["fps"]))
+        ready = ("Ready · %.1f s × %d · %d fps"
+                 % (self.cfg["duration"],
+                    int(self.clamped(self.w.loops, 3, 1, 20)),
+                    self.cfg["fps"]))
+        # the missing variable export stays said: it is why the lanes are Size
+        # and Tracking, and the timing note alone would hide it
+        if getattr(self, "noVariableExport", False):
+            ready = "No variable export · static " + self.masterName + " · " + ready
+        elif self.static and getattr(self, "variableTrouble", None):
+            ready = "Variable export failed · static " + self.masterName + " · " + ready
+        self.w.status.set(ready)
 
     # -- a part of the font ---------------------------------------------------
 
@@ -5150,17 +5211,16 @@ class KINOMAT(object):
         # standing are made to read the new axes and the window is not touched
         # at all. Only a different number of them — or a setting that came
         # out with no axes to show — asks for the panel to be built again.
-        if axes and not self.static and len(axes) == len(self.axes):
-            self.reskinLanes(axes)
+        lanes = lanesFor(axes)
+        if axes and not self.static and len(lanes) == len(self.axes):
+            self.reskinLanes(lanes)
             self.startStepping()
             if self.playing:
                 self.startTimer()
             self.settingsChanged()
         else:
-            self.axes = axes
-            self.static = not self.axes
-            if self.static:
-                self.axes = staticLanes()
+            self.static = not axes
+            self.axes = lanes
             # The window is built again around the new lanes, and the old one
             # goes behind it: at the same top left corner, and in that order,
             # or the panel blinks out and comes back somewhere else. It must

@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.71** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.77** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -30,7 +30,7 @@ The panel opens as you left it: every setting below is kept when the window clos
 
 **FONT** — `Export` picks which of the document's variable exports is filmed, naming each one, with the family in front where they do not all make the same one. The row appears only when there is more than one to choose. Changing it rebuilds the lanes around the new axes and carries the rest of the panel across.
 
-A document with axes **needs a variable font export** in *Font Info ▸ Exports*: that is the font Kinomat films, and without one it says so and does not open.
+A document with axes films its **variable font export** from *Font Info ▸ Exports*. Without one, the panel opens on the static font of the master in front, with Size and Tracking for lanes, and the panel says so in orange beside the lanes. A variable export that fails — glyphs not compatible across masters — opens the same way, naming the glyphs.
 
 **TEXT**
 
@@ -50,7 +50,12 @@ A document with axes **needs a variable font export** in *Font Info ▸ Exports*
 |---|---|
 | `Preset` | Reel / Story 9:16 · Post 1:1 · Post 4:5 · Post 5:4 · Landscape 16:9 · Square 2000 · Custom |
 | `Size` | width × height in pixels, if none of those fits |
-| `Paper`, `Ink` | the two colours, by picker or by hex. The **⇄** between them is the film in negative |
+| `Stage`, `Ink` | the two colours, by picker or by hex. The **⇄** between them is the film in negative |
+
+**BACKGROUND**
+
+| | |
+|---|---|
 | `Media` | an image or a video behind the word — png, jpg, heic, tif, gif, bmp, webp · mov, mp4, m4v. **✕** takes it away. *Pro* |
 | `Real time` | a video behind sets the film's length and speed; switched off, Duration and fps are yours again |
 | `Zoom`, `Rotate`, `Speed` | how large the media is drawn, which way round, and how fast a video runs |
@@ -67,7 +72,7 @@ A document with axes **needs a variable font export** in *Font Info ▸ Exports*
 | `Animate` | **Whole** the text as one · **Words** · **Letters**, each piece a step behind the one before. A single word has nothing to divide, and the panel says so |
 | `Repeat` | how many times the loop runs in the exported file |
 
-**THE LANES** — one per axis, or, for a font with no axes, Size and Tracking instead.
+**THE LANES** — one per axis, then **Size** and **Tracking**, always. With axes those two start switched off; with none they are the whole film.
 
 | | |
 |---|---|
