@@ -4,7 +4,9 @@
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
-A plugin for the [Glyphs font editor](https://glyphsapp.com/) that films the font you are drawing: a word travelling along its own variable axes, over a colour or over a photograph, out as MP4, GIF or a PNG sequence. No timeline and no keyframes — each axis gets a lane, with a **from** and a **to**.
+A plugin for the [Glyphs font editor](https://glyphsapp.com/) that turns your variable font into a short animation. Type a word, choose which axes move and between which values, and export it as **MP4**, **GIF** or **PNG sequence** — ready for Instagram, a specimen or a presentation. It always shows the font as it really exports, so you can watch your design in motion while you are still working on it.
+
+**[Read the manual →](https://resistenza.es/glyphs/kinomat.html)**
 
 **Exporting the film needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: **[get the key — €19](https://buy.stripe.com/5kQ5kD5SX38m19New9eQM05)**. The same key opens the tools at [resistenza.es/tools](https://resistenza.es/tools/).
 
