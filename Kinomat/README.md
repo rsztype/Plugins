@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.77** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.78** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 

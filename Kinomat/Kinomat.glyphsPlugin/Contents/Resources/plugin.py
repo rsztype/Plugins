@@ -27,9 +27,15 @@ from AppKit import (NSColor, NSImage, NSTimer, NSColorSpace,
     NSForegroundColorAttributeName, NSFontWeightSemibold, NSFontWeightBold,
     NSFocusRingTypeNone, NSBaselineOffsetAttributeName,
     NSEvent, NSEventMaskKeyDown, NSTextView, NSScreen,
-    NSEventModifierFlagShift, NSEventModifierFlagOption)
+    NSEventModifierFlagShift, NSEventModifierFlagOption,
+    NSApplication, NSEventMaskAny, NSEventTypeLeftMouseDown,
+    NSEventTypeLeftMouseUp, NSEventTypeLeftMouseDragged,
+    NSEventTypeRightMouseDown, NSEventTypeRightMouseUp,
+    NSEventTypeRightMouseDragged, NSEventTypeOtherMouseDown,
+    NSEventTypeOtherMouseUp, NSEventTypeOtherMouseDragged,
+    NSEventTypeKeyDown, NSEventTypeKeyUp, NSEventTypeScrollWheel)
 from Foundation import (NSData, NSURL, NSAttributedString, NSRunLoop, NSDate,
-    NSMutableAttributedString)
+    NSMutableAttributedString, NSDefaultRunLoopMode)
 # vanilla, Quartz and CoreText cost about a fifth of a second to import
 # between them, and Glyphs imports every plugin at launch — whether or not
 # anyone opens this window. Nothing outside the panel needs them, so they are
@@ -1088,6 +1094,18 @@ class Backdrop(object):
 # export
 # ----------------------------------------------------------------------------
 
+class ExportCancelled(Exception):
+    pass
+
+
+def removeQuietly(path):
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 def writeGIF(path, images, fps, count=None):
     """The images can come one at a time, as they are made: then count says how
     many there will be, which the file has to be told before the first."""
@@ -1953,6 +1971,7 @@ FIELD_H = 24
 POPUP_H = 22
 LANE_H = 34
 EXPORT_H = 52
+PROGRESS_W = 340
 SIDE_H = 437                         # the taller column, CANVAS, with its
                                      # margin: the settings never have less
                                      # room than this
@@ -2410,6 +2429,8 @@ class KINOMAT(object):
         # place in variableSettings(); None when it holds none
         self.setting = defaultSetting(self.font)
         self.rebuilding = False
+        self.exporting = False
+        self.closed = False
 
         started = time.time()
         # Not every document is a design space. One master has nothing to vary,
@@ -3300,6 +3321,14 @@ class KINOMAT(object):
 
         self.caption("status", laneR - 340, exportY + 19, 340, "",
                      INK_STATUS, 11, align=NSTextAlignmentRight, height=14)
+        self.zone("progressTrack", (laneR - PROGRESS_W, exportY + 37,
+                                    PROGRESS_W, 3), LINE_FIELD)
+        self.zone("progressFill", (laneR - PROGRESS_W, exportY + 37, 0, 3),
+                  ACCENT)
+        for name in ("progressTrack", "progressFill"):
+            view = getattr(self.w, name).getNSView()
+            view.layer().setCornerRadius_(1.5)
+            view.setHidden_(True)
 
         self.styleUI()
         drawSmaller(self.w.getNSWindow(), (winW, winH))
@@ -4300,6 +4329,9 @@ class KINOMAT(object):
         long as ever for the whole font — and goes on with the new font.
         """
         self.widenTimer = None
+        if self.exporting:
+            self.later(0.5)
+            return
         if self.kept is None or self.stuck:
             return
         letters, needed = self.letters, None
@@ -4673,8 +4705,68 @@ class KINOMAT(object):
         self.askForKey(pending)
         return True
 
+    # -- export progress ---------------------------------------------------------
+
+    IGNORED_DURING_EXPORT = frozenset((
+        NSEventTypeLeftMouseDown, NSEventTypeLeftMouseUp,
+        NSEventTypeLeftMouseDragged, NSEventTypeRightMouseDown,
+        NSEventTypeRightMouseUp, NSEventTypeRightMouseDragged,
+        NSEventTypeOtherMouseDown, NSEventTypeOtherMouseUp,
+        NSEventTypeOtherMouseDragged, NSEventTypeKeyDown, NSEventTypeKeyUp,
+        NSEventTypeScrollWheel))
+
+    def beginExport(self):
+        self.exporting = True
+        self.showProgress(0, 1, "Exporting")
+        for name in ("progressTrack", "progressFill"):
+            getattr(self.w, name).getNSView().setHidden_(False)
+
+    def endExport(self, wasPlaying):
+        self.exporting = False
+        for name in ("progressTrack", "progressFill"):
+            getattr(self.w, name).getNSView().setHidden_(True)
+        if wasPlaying and not self.closed:
+            self.startTimer()
+
+    def showProgress(self, done, total, label):
+        self.w.status.set("%s… %d / %d" % (label, done, total)
+                          if done else "%s…" % label)
+        self.w.progressFill.getNSView().setFrameSize_(
+            (PROGRESS_W * done / float(max(1, total)), 3))
+        self.w.getNSWindow().displayIfNeeded()
+
+    def keepAnswering(self):
+        """Hand pending events to the app between frames, so macOS does not
+        take Glyphs for hung and show the spinning wait cursor. Clicks and keys
+        aimed at this panel are dropped: nothing in it may change mid-film."""
+        app = NSApplication.sharedApplication()
+        window = self.w.getNSWindow()
+        while True:
+            event = app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                NSEventMaskAny, NSDate.distantPast(), NSDefaultRunLoopMode, True)
+            if event is None:
+                break
+            if event.window() == window and \
+                    event.type() in self.IGNORED_DURING_EXPORT:
+                continue
+            app.sendEvent_(event)
+
+    def trackedFrames(self, frames, total):
+        last = 0.0
+        for i, frame in enumerate(frames):
+            if self.closed:
+                raise ExportCancelled()
+            now = time.time()
+            if now - last >= 0.05 or i + 1 == total:
+                last = now
+                self.showProgress(i + 1, total, "Exporting")
+            self.keepAnswering()
+            yield frame
+        self.w.status.set("Writing the file…")
+        self.w.getNSWindow().displayIfNeeded()
+
     def exportGIF(self, sender=None):
-        if self.blockedWithoutPro(self.exportGIF):
+        if self.exporting or self.blockedWithoutPro(self.exportGIF):
             return
         path = putFile(fileTypes=["gif"], fileName=self.defaultName() + ".gif",
                        title="Export GIF")
@@ -4682,16 +4774,21 @@ class KINOMAT(object):
             return
         wasPlaying = self.playing
         self.stopTimer()
-        self.w.status.set("Rendering…")
+        self.beginExport()
         try:
             frames, cw, ch = self.filmFrames()
-            writeGIF(path, frames, self.fps(), count=self.frameCount())
+            count = self.frameCount()
+            writeGIF(path, self.trackedFrames(frames, count), self.fps(),
+                     count=count)
+        except ExportCancelled:
+            removeQuietly(path)
+            return
         except Exception as e:
+            self.w.status.set("Export failed")
             Message("Kinomat", "GIF export failed:\n%s" % e)
             return
         finally:
-            if wasPlaying:
-                self.startTimer()
+            self.endExport(wasPlaying)
         mb = os.path.getsize(path) / 1048576.0
         self.w.status.set("Saved · %s · %.1f MB" % (os.path.basename(path), mb))
         if mb > 8:
@@ -4699,7 +4796,7 @@ class KINOMAT(object):
                                  "duration to stay under 8 MB." % mb)
 
     def exportMP4(self, sender=None):
-        if self.blockedWithoutPro(self.exportMP4):
+        if self.exporting or self.blockedWithoutPro(self.exportMP4):
             return
         path = putFile(fileTypes=["mp4"], fileName=self.defaultName() + ".mp4",
                        title="Export MP4")
@@ -4707,28 +4804,35 @@ class KINOMAT(object):
             return
         wasPlaying = self.playing
         self.stopTimer()
-        self.w.status.set("Rendering…")
+        self.beginExport()
         try:
             repeats = int(self.clamped(self.w.loops, 3, 1, 20))
             once = MODES[self.w.mode.get()] == "Play once"
-            frames, cw, ch = self.filmFrames(1 if once else repeats)
-            codec = writeMP4(path, frames, self.fps(), cw, ch,
-                             wantHEVC=self.wantHEVC)
+            if once:
+                repeats = 1
+            frames, cw, ch = self.filmFrames(repeats)
+            codec = writeMP4(path,
+                             self.trackedFrames(frames,
+                                                self.frameCount() * repeats),
+                             self.fps(), cw, ch, wantHEVC=self.wantHEVC)
             if not codec:
                 raise Exception("AVAssetWriter did not finish writing.")
+        except ExportCancelled:
+            removeQuietly(path)
+            return
         except Exception as e:
+            self.w.status.set("Export failed")
             Message("Kinomat", "MP4 export failed:\n%s" % e)
             return
         finally:
-            if wasPlaying:
-                self.startTimer()
+            self.endExport(wasPlaying)
         mb = os.path.getsize(path) / 1048576.0
         self.w.status.set("Saved · %s · %d×%d · %.1f MB · %s"
                           % (os.path.basename(path), cw, ch, mb, codec))
 
     def exportPNG(self, sender=None):
         """Every frame as its own PNG, in a folder named after the font."""
-        if self.blockedWithoutPro(self.exportPNG):
+        if self.exporting or self.blockedWithoutPro(self.exportPNG):
             return
         folder = getFolder(messageText="Where should the frames go?")
         if not folder:
@@ -4737,24 +4841,26 @@ class KINOMAT(object):
         target = os.path.join(folder[0], stem)
         wasPlaying = self.playing
         self.stopTimer()
-        self.w.status.set("Rendering…")
+        self.beginExport()
         written = 0
         try:
             if not os.path.isdir(target):
                 os.makedirs(target)
             frames, cw, ch = self.filmFrames()
-            written = 0
-            for i, frame in enumerate(frames):
+            for i, frame in enumerate(self.trackedFrames(frames,
+                                                         self.frameCount())):
                 with objc.autorelease_pool():
                     writePNG(os.path.join(target, "%s-%04d.png" % (stem, i + 1)),
                              frame)
                 written = i + 1
+        except ExportCancelled:
+            return
         except Exception as e:
+            self.w.status.set("Export failed")
             Message("Kinomat", "PNG export failed:\n%s" % e)
             return
         finally:
-            if wasPlaying:
-                self.startTimer()
+            self.endExport(wasPlaying)
         self.w.status.set("Saved · %d frames · %s" % (written, stem))
 
     # -- the backdrop -----------------------------------------------------------
@@ -5489,6 +5595,7 @@ class KINOMAT(object):
         # window on the way: the export it is about to show must stay
         if getattr(self, "rebuilding", False):
             return
+        self.closed = True
         self.rememberLast()
         if self in OPEN_PANELS:
             OPEN_PANELS.remove(self)
