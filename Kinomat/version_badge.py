@@ -18,7 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 INFO = os.path.join(HERE, "Kinomat.glyphsPlugin", "Contents", "Info.plist")
 SOURCE = os.path.join(HERE, "Kinomat-screen.png")
 TARGET = os.path.join(HERE, "Kinomat.png")
-FONT = "/Library/Fonts/Performa-Bold.otf"
+FONT = "/Library/Fonts/Monologo-Bold.otf"
+TITLE_FONT = "/Library/Fonts/Monologo-Medium.otf"   # where SF is not there
 ORANGE = (255, 77, 0)
 
 with open(INFO, "rb") as fh:
@@ -34,7 +35,10 @@ draw = ImageDraw.Draw(image)
 OLD_TITLE, TITLE_BOX = "Industria Serif \u2013 Kinomat 0.59", (143, 50, 336, 59)
 try:
     def systemFont(px):
-        f = ImageFont.truetype("/System/Library/Fonts/SFNS.ttf", px)
+        try:
+            f = ImageFont.truetype("/System/Library/Fonts/SFNS.ttf", px)
+        except OSError:
+            return ImageFont.truetype(TITLE_FONT, px)
         try: f.set_variation_by_name("Semibold")
         except Exception: pass
         return f
