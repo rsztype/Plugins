@@ -574,7 +574,7 @@ def shrunk(image, w, h):
 def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
                 bgColor, fgColor, align, unit="Whole", track=0.0, sliders=None,
                 backdrop=None, zoom=1.0, turn=0.0, bright=0.0, contrast=0.0,
-                ink=None, features=None, textTurn=0.0):
+                ink=None, features=None, textTurn=0.0, outlines=False):
     cs = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
     ctx = Quartz.CGBitmapContextCreate(None, int(w), int(h), 8, 0, cs,
                                        Quartz.kCGImageAlphaPremultipliedLast)
@@ -630,6 +630,14 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
         Quartz.CGContextRotateCTM(ctx, -math.radians(angle))
         Quartz.CGContextTranslateCTM(ctx, -w / 2.0, -h / 2.0)
 
+    # Outlines only: the letters are stroked and not filled. A hairline of the
+    # frame, in the text colour; a fraction of the short side so a small frame
+    # and a large export carry the same line.
+    if outlines:
+        Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextStroke)
+        Quartz.CGContextSetStrokeColorWithColor(ctx, fgColor)
+        Quartz.CGContextSetLineWidth(ctx, max(1.0, min(w, h) * 0.003))
+
     for i, txt in enumerate(lines):
         pieces = blocks[i]
         # each piece gets its own font at its own point in the cycle, and is
@@ -666,6 +674,8 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
             CoreText.CTLineDraw(line, ctx)
             x += wid
 
+    if outlines:
+        Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextFill)
     if angle:
         Quartz.CGContextRestoreGState(ctx)
 
@@ -2919,6 +2929,9 @@ class KINOMAT(object):
         self.field("textTurn", FIELD_X, y, 66, "0")
         self.caption("textTurnUnit", FIELD_X + 72, y + 4, 16, "\u00b0",
                      INK_MUTED, 11)
+        self.outlineCheck = self.check("outlineBox", FIELD_X + 122, y, 96,
+                                       "Outlines only", False,
+                                       self.settingsChanged)
         y += FIELD_H + 8
 
         # AppKit gives a segmented control the accent set in System Settings
@@ -3644,6 +3657,7 @@ class KINOMAT(object):
             "lead": self.clamped(self.w.lead, 110, 40, 300),
             "track": self.clamped(self.w.track, 0, -300, 1000),
             "textTurn": self.clamped(self.w.textTurn, 0, -180, 180),
+            "outlines": bool(self.outlineCheck.on),
             "align": ALIGNMENTS[self.alignIndex],
             # clig goes with liga: a contextual ligature is a ligature, and
             # nobody wants two tick boxes to say one thing
@@ -4043,7 +4057,8 @@ class KINOMAT(object):
                            c["bg"], c["fg"], c["align"], c["unit"], c["track"],
                            self.sliderInfo(progress), backdrop, zoom, turn,
                            c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
-                           c.get("features"), c.get("textTurn", 0.0))
+                           c.get("features"), c.get("textTurn", 0.0),
+                           c.get("outlines", False))
 
     # -- preview -------------------------------------------------------------
 
@@ -5183,6 +5198,7 @@ class KINOMAT(object):
             "dlig": bool(self.dligCheck.on),
             "tracking": self.num(self.w.track, 0.0),
             "textRotate": self.num(self.w.textTurn, 0.0),
+            "outlines": bool(self.outlineCheck.on),
             "sliders": bool(self.sliderCheck.on),
             "filmSize": float(self.filmStep or 1.0),
             "align": ALIGNMENTS[self.alignIndex],
@@ -5489,6 +5505,7 @@ class KINOMAT(object):
         tick("dlig", self.dligCheck)
         number("tracking", "track")
         number("textRotate", "textTurn")
+        tick("outlines", self.outlineCheck)
         tick("sliders", self.sliderCheck)
         if usable(data.get("filmSize")):
             self.filmStep = min(2.0, max(1.0, float(data["filmSize"])))
