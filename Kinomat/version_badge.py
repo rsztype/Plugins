@@ -52,9 +52,8 @@ try:
 except OSError:
     pass
 
-# the badge sits inside the window, in the empty space of the left column
-# under Align, big enough to be read in the Plugin Manager's small preview
-AREA = (60, 372, 296, 518)          # left column, below the Text group
+# the badge sits on the top right corner of the window, big enough to be
+# read in the Plugin Manager's small preview
 size = round(w * 0.03)
 font = None
 for f in (FONT, "/Library/Fonts/Performa-Bold.otf"):   # the first one that is installed
@@ -68,8 +67,9 @@ box = draw.textbbox((0, 0), label, font=font)
 tw, th = box[2] - box[0], box[3] - box[1]
 padX, padY = round(size * 0.6), round(size * 0.4)
 bw, bh = tw + 2 * padX, th + 2 * padY
-x0 = (AREA[0] + AREA[2] - bw) // 2
-y0 = (AREA[1] + AREA[3] - bh) // 2
+CORNER = (1222, 40)                 # the window's top right corner in the screenshot
+x0 = min(w - 4 - bw, CORNER[0] - bw // 2)
+y0 = max(4, CORNER[1] - bh // 2)
 x1, y1 = x0 + bw, y0 + bh
 draw.rounded_rectangle((x0, y0, x1, y1), radius=bh // 2, fill=ORANGE + (255,))
 draw.text((x0 + padX - box[0], y0 + padY - box[1]), label, font=font, fill=(255, 255, 255, 255))
