@@ -574,7 +574,7 @@ def shrunk(image, w, h):
 def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
                 bgColor, fgColor, align, unit="Whole", track=0.0, sliders=None,
                 backdrop=None, zoom=1.0, turn=0.0, bright=0.0, contrast=0.0,
-                ink=None, features=None):
+                ink=None, features=None, textTurn=0.0):
     cs = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
     ctx = Quartz.CGBitmapContextCreate(None, int(w), int(h), 8, 0, cs,
                                        Quartz.kCGImageAlphaPremultipliedLast)
@@ -620,6 +620,16 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
         firstOf.append(counted)
         counted += len(block)
 
+    # The TEXT section's Rotate turns the text block about the middle of the frame,
+    # clockwise for a positive angle. The sliders are drawn after, upright.
+    # The angle is the Rotate field of the TEXT section.
+    angle = float(textTurn or 0.0)
+    if angle:
+        Quartz.CGContextSaveGState(ctx)
+        Quartz.CGContextTranslateCTM(ctx, w / 2.0, h / 2.0)
+        Quartz.CGContextRotateCTM(ctx, -math.radians(angle))
+        Quartz.CGContextTranslateCTM(ctx, -w / 2.0, -h / 2.0)
+
     for i, txt in enumerate(lines):
         pieces = blocks[i]
         # each piece gets its own font at its own point in the cycle, and is
@@ -655,6 +665,9 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
             Quartz.CGContextSetTextPosition(ctx, x, y)
             CoreText.CTLineDraw(line, ctx)
             x += wid
+
+    if angle:
+        Quartz.CGContextRestoreGState(ctx)
 
     drawSliders(ctx, w, h, sliders, fgColor)
     return Quartz.CGBitmapContextCreateImage(ctx)
@@ -1972,7 +1985,7 @@ POPUP_H = 22
 LANE_H = 34
 EXPORT_H = 52
 PROGRESS_W = 340
-SIDE_H = 437                         # the taller column, CANVAS, with its
+SIDE_H = 469                         # the taller column, CANVAS, with its
                                      # margin: the settings never have less
                                      # room than this
 MOTION_H = 199                       # MOTION, in the left column beside the
@@ -2269,7 +2282,18 @@ except Exception:
                 NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
                     ((x - 1, mid - 9), (2, 18)), 1, 1).fill()
 
-            edge = ACCENT if self.animating else HANDLE_OFF
+            if not self.animating:
+                # not animated: one dot, the weight it stays at
+                dot = NSBezierPath.bezierPathWithOvalInRect_(
+                    ((xLo - HANDLE / 2.0, mid - HANDLE / 2.0), (HANDLE, HANDLE)))
+                (ACCENT if self.dragging else SURF_FIELD).set()
+                dot.fill()
+                ACCENT.set()
+                dot.setLineWidth_(1.5)
+                dot.stroke()
+                return
+
+            edge = ACCENT
             for which, x in (("lo", xLo), ("hi", xHi)):
                 path = diamondPath(x, mid, HANDLE)
                 # the one under the hand fills, so it is plain which of the two
@@ -2284,7 +2308,7 @@ except Exception:
             x = self.convertPoint_fromView_(event.locationInWindow(), None).x
             # whichever handle is nearer is the one being dragged
             self.dragging = "lo"
-            if abs(x - self.xFor(self.hi)) < abs(x - self.xFor(self.lo)):
+            if self.animating and abs(x - self.xFor(self.hi)) < abs(x - self.xFor(self.lo)):
                 self.dragging = "hi"
             self.mouseDragged_(event)
 
@@ -2889,6 +2913,12 @@ class KINOMAT(object):
                      INK_MUTED, 11)
         # Sliders used to stand here; it draws the lanes' own sliders in the
         # frame, so it stands with the lanes now
+        y += FIELD_H + 8
+
+        self.rowLabel("lbRotate", y, "Rotate")
+        self.field("textTurn", FIELD_X, y, 66, "0")
+        self.caption("textTurnUnit", FIELD_X + 72, y + 4, 16, "\u00b0",
+                     INK_MUTED, 11)
         y += FIELD_H + 8
 
         # AppKit gives a segmented control the accent set in System Settings
@@ -3613,6 +3643,7 @@ class KINOMAT(object):
             "lines": (self.w.text.get() or " ").replace("\\n", "\n").splitlines() or [" "],
             "lead": self.clamped(self.w.lead, 110, 40, 300),
             "track": self.clamped(self.w.track, 0, -300, 1000),
+            "textTurn": self.clamped(self.w.textTurn, 0, -180, 180),
             "align": ALIGNMENTS[self.alignIndex],
             # clig goes with liga: a contextual ligature is a ligature, and
             # nobody wants two tick boxes to say one thing
@@ -4012,7 +4043,7 @@ class KINOMAT(object):
                            c["bg"], c["fg"], c["align"], c["unit"], c["track"],
                            self.sliderInfo(progress), backdrop, zoom, turn,
                            c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
-                           c.get("features"))
+                           c.get("features"), c.get("textTurn", 0.0))
 
     # -- preview -------------------------------------------------------------
 
@@ -5151,6 +5182,7 @@ class KINOMAT(object):
             "liga": bool(self.ligaCheck.on),
             "dlig": bool(self.dligCheck.on),
             "tracking": self.num(self.w.track, 0.0),
+            "textRotate": self.num(self.w.textTurn, 0.0),
             "sliders": bool(self.sliderCheck.on),
             "filmSize": float(self.filmStep or 1.0),
             "align": ALIGNMENTS[self.alignIndex],
@@ -5456,6 +5488,7 @@ class KINOMAT(object):
         tick("liga", self.ligaCheck)
         tick("dlig", self.dligCheck)
         number("tracking", "track")
+        number("textRotate", "textTurn")
         tick("sliders", self.sliderCheck)
         if usable(data.get("filmSize")):
             self.filmStep = min(2.0, max(1.0, float(data["filmSize"])))
