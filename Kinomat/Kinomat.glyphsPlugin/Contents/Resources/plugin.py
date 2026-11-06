@@ -2930,7 +2930,7 @@ class KINOMAT(object):
         self.caption("textTurnUnit", FIELD_X + 72, y + 4, 16, "\u00b0",
                      INK_MUTED, 11)
         self.outlineCheck = self.check("outlineBox", FIELD_X + 122, y, 96,
-                                       "Outlines only", False,
+                                       "Outlines", False,
                                        self.settingsChanged)
         y += FIELD_H + 8
 
