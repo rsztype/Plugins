@@ -52,19 +52,26 @@ try:
 except OSError:
     pass
 
-size = round(w * 0.034)
-try:
-    font = ImageFont.truetype(FONT, size)
-except OSError:
-    font = ImageFont.load_default()
+# the badge sits inside the window, in the empty space of the left column
+# under Align, big enough to be read in the Plugin Manager's small preview
+AREA = (60, 372, 296, 518)          # left column, below the Text group
+size = round(w * 0.03)
+font = None
+for f in (FONT, "/Library/Fonts/Performa-Bold.otf"):   # the first one that is installed
+    try:
+        font = ImageFont.truetype(f, size); break
+    except OSError:
+        pass
+if font is None:
+    raise SystemExit("No badge font installed: " + FONT)
 box = draw.textbbox((0, 0), label, font=font)
 tw, th = box[2] - box[0], box[3] - box[1]
-padX, padY = round(size * 0.6), round(size * 0.35)
-margin = round(w * 0.02)
-x1, y1 = w - margin, margin
-x0, y0 = x1 - tw - 2 * padX, y1 + 0
-y1 = y0 + th + 2 * padY
-draw.rounded_rectangle((x0, y0, x1, y1), radius=(y1 - y0) // 2, fill=ORANGE + (255,))
+padX, padY = round(size * 0.6), round(size * 0.4)
+bw, bh = tw + 2 * padX, th + 2 * padY
+x0 = (AREA[0] + AREA[2] - bw) // 2
+y0 = (AREA[1] + AREA[3] - bh) // 2
+x1, y1 = x0 + bw, y0 + bh
+draw.rounded_rectangle((x0, y0, x1, y1), radius=bh // 2, fill=ORANGE + (255,))
 draw.text((x0 + padX - box[0], y0 + padY - box[1]), label, font=font, fill=(255, 255, 255, 255))
 image.save(TARGET, optimize=True)
 print("Kinomat.png:", label)
