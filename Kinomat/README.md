@@ -80,7 +80,8 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 
 | | |
 |---|---|
-| the tick beside the name | this axis moves. Unticked, the two diamonds become one dot: drag it to choose the value the axis stands at |
+| the tick beside the name | this axis moves. Unticked, it stands still |
+| diamond or circle | a **diamond** is an end of a movement, **from** and **to**: a ticked lane has two. A **circle** is one value: an unticked lane has one, and drags to the value the axis stands at |
 | `from → to` | where the axis starts and ends. The diamonds on the track do the same by hand |
 | the number in orange | where the axis is, right now, in the frame on the stage |
 | `Alternate` | the lanes one after another, each adding to the ones before |
