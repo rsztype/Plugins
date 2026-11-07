@@ -45,7 +45,8 @@ box = draw.textbbox((0, 0), label, font=font)
 tw, th = box[2] - box[0], box[3] - box[1]
 padX, padY = round(size * 0.6), round(size * 0.4)
 bw, bh = tw + 2 * padX, th + 2 * padY
-CORNER = (1223, 39)                 # the window's top right corner in the screenshot
+outline = image.split()[3].point(lambda v: 255 if v > 200 else 0).getbbox()
+CORNER = (outline[2], outline[1])      # the window's top right corner, from its own outline
 x0 = min(w - 4 - bw, CORNER[0] - bw // 2)
 y0 = max(4, CORNER[1] - bh // 2)
 x1, y1 = x0 + bw, y0 + bh
