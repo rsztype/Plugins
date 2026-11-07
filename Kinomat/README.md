@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.78** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.92** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -41,10 +41,12 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 | the box | what is filmed, one line per line. It opens on the font's own name |
 | `Size` | in points, on the canvas — with **Fit width** it is set for you, as wide as the canvas allows |
 | `Leading` | the distance between lines, as a percentage |
-| `Cycle` | instead of the word, the font's glyphs one after another, components included |
 | `Tracking` | letter-spacing, per thousand of the em, on top of the font's own kerning |
+| `Rotate` | turns the text, in degrees, around the middle of the canvas |
 | `Align` | left, centre, right |
 | `Ligatures` | **liga** standard ones, clig with them · **dlig** the discretionary ones. Measured as they are drawn |
+| `Outlines` | the letters drawn as outlines only, in the Ink colour |
+| `Cycle` | instead of the word, the font's glyphs one after another, components included. Glyphs whose curves cannot be made compatible between masters are left out, and the panel says how many |
 
 **CANVAS**
 
@@ -78,7 +80,7 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 
 | | |
 |---|---|
-| the tick beside the name | this axis moves. Unticked, it stands still on its **from** |
+| the tick beside the name | this axis moves. Unticked, the two diamonds become one dot: drag it to choose the value the axis stands at |
 | `from → to` | where the axis starts and ends. The diamonds on the track do the same by hand |
 | the number in orange | where the axis is, right now, in the frame on the stage |
 | `Alternate` | the lanes one after another, each adding to the ones before |

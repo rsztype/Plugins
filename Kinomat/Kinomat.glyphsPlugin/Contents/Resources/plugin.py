@@ -1901,6 +1901,27 @@ def exportFont(font, master=None, needed=None, setting=None):
     if not path:
         path, error = _generate(font, folder, master, None, setting)
 
+    if not path and error:
+        # glyphs whose curves cannot be made compatible TrueType stop the whole
+        # font from going out: leave those out, and say so, rather than show
+        # nothing at all. The error names them, a few at a time.
+        import re
+        left = set()
+        for attempt in range(8):
+            found = re.search(r"not compatible:\s*(.*?)\s*Can.t convert",
+                              error or "", re.S)
+            if not found:
+                break
+            left |= set(n.strip() for n in found.group(1).split(",") if n.strip())
+            names = frozenset(g.name for g in font.glyphs if g.name not in left)
+            clearFolder(folder)
+            path, error = _generate(font, folder, master, names, setting)
+            if path:
+                kept = names
+                print("Kinomat \u2014 left out, they cannot be made compatible "
+                      "TrueType: %s" % ", ".join(sorted(left)))
+                break
+
     if not path:
         if master is not None:
             raise Exception("Font export failed.\n%s"
@@ -1983,7 +2004,7 @@ UI_ACCENT = ACCENT
 # Air has: the export bar fell off the bottom of the screen. The settings are
 # in two columns now, so the panel is as wide as a film and never taller than
 # the screen it opens on.
-COL_W = 296                          # one column of settings
+COL_W = 249                          # one column of settings
 SIDE_W = COL_W * 2                   # the two of them, side by side
 GUTTER = 16                          # a column's own padding
 LABEL_W = 56                         # the right-aligned label column
@@ -1992,18 +2013,19 @@ FIELD_W = COL_W - GUTTER - FIELD_X
 ZONE_PAD = 18                        # left and right of the lanes and the bar
 FIELD_H = 24
 POPUP_H = 22
-LANE_H = 34
-EXPORT_H = 52
+LANE_H = 30
+EXPORT_H = 44
 PROGRESS_W = 340
-SIDE_H = 469                         # the taller column, CANVAS, with its
+SIDE_H = 557                         # the taller column, CANVAS, with its
                                      # margin: the settings never have less
                                      # room than this
-MOTION_H = 199                       # MOTION, in the left column beside the
+MOTION_H = 185                       # MOTION, in the left column beside the
                                      # lanes: the band is never shorter
 WIN_RATIO = 16.0 / 9.0
 WIN_MAX_W = 1440                     # on a large screen it stops growing here
 WIN_MIN_W = SIDE_W + 520             # and the stage is never narrower than this
-CANVAS_MAX_W, CANVAS_MAX_H = 620, 470
+CANVAS_MAX_W, CANVAS_MAX_H = 1400, 1000
+CANVAS_MARGIN = 6                    # air around the picture in the stage
 UI_SCALE = 0.8                       # the whole panel is laid out at full size
                                      # and drawn four fifths of it: it came out
                                      # too large on the screen, and one
@@ -2423,6 +2445,7 @@ class KINOMAT(object):
     widenTimer = None
     switchTimer = None          # the change of variable setting about to run
     openAt = None               # the corner a window built again opens at
+    wholeTried = False          # Cycle's whole-font export was made, whole or not
     stuck = False               # an export for new letters failed: no more
     projectName = None          # the .rsztools file saved or opened last
     backdrop = None             # a Backdrop: the image or video behind the text
@@ -2790,7 +2813,7 @@ class KINOMAT(object):
         stageX = SIDE_W + 1
         # the lanes on the right, the MOTION column on the left: the band is
         # as tall as whichever of the two asks for more
-        laneH = max(MOTION_H, 89 + LANE_H * len(self.axes))
+        laneH = max(MOTION_H, 79 + LANE_H * len(self.axes))
         winW, winH = windowSize(laneH)
         self.winW = winW
         stageW = winW - stageX
@@ -2876,7 +2899,7 @@ class KINOMAT(object):
         y = self.sectionTitle("hdText", GUTTER, self.divider("div0", y + 8),
                               "TEXT")
         # the font's own name, which is what you want to look at first
-        self.w.text = vanilla.TextEditor((GUTTER, y, COL_W - GUTTER * 2, 56),
+        self.w.text = vanilla.TextEditor((GUTTER, y, COL_W - GUTTER * 2, 80),
                                          openingText(self.font),
                                          callback=self.settingsChanged,
                                          checksSpelling=False)
@@ -2902,7 +2925,7 @@ class KINOMAT(object):
         frame.setBorderWidth_(1.0)
         frame.setBorderColor_(LINE_FIELD.CGColor())
         frame.setMasksToBounds_(True)
-        y += 68
+        y += 92
 
         self.rowLabel("lbSize", y, "Size")
         self.field("size", FIELD_X, y, 66, "200")
@@ -2913,8 +2936,6 @@ class KINOMAT(object):
         self.rowLabel("lbLead", y, "Leading")
         self.field("lead", FIELD_X, y, 66, "110")
         self.caption("leadPct", FIELD_X + 72, y + 4, 16, "%", INK_MUTED, 11)
-        self.cycleCheck = self.check("cycleBox", FIELD_X + 122, y, 76,
-                                     "Cycle", False, self.settingsChanged)
         y += FIELD_H + 8
 
         self.rowLabel("lbTrack", y, "Tracking")
@@ -2929,9 +2950,6 @@ class KINOMAT(object):
         self.field("textTurn", FIELD_X, y, 66, "0")
         self.caption("textTurnUnit", FIELD_X + 72, y + 4, 16, "\u00b0",
                      INK_MUTED, 11)
-        self.outlineCheck = self.check("outlineBox", FIELD_X + 122, y, 96,
-                                       "Outlines", False,
-                                       self.settingsChanged)
         y += FIELD_H + 8
 
         # AppKit gives a segmented control the accent set in System Settings
@@ -2973,6 +2991,18 @@ class KINOMAT(object):
                 box.setToolTip_(says)
             except Exception:
                 pass
+        y += FIELD_H + 8
+
+        # the text drawn as outlines only: the name, then the box
+        self.rowLabel("lbOutlines", y, "Outlines")
+        self.outlineCheck = self.check("outlineBox", FIELD_X, y, 24, "", False,
+                                       self.settingsChanged)
+        y += FIELD_H + 8
+
+        # Cycle: every glyph of the font, one after another
+        self.rowLabel("lbCycle", y, "Cycle")
+        self.cycleCheck = self.check("cycleBox", FIELD_X, y, 24, "", False,
+                                     self.settingsChanged)
         y += FIELD_H
 
         # MOTION used to stand here, between TEXT and CANVAS. It is down with
@@ -3010,7 +3040,7 @@ class KINOMAT(object):
             except Exception:
                 pass
             # the well and the value it holds: one to pick with, one to paste into
-            self.field(target + "Hex", FIELD_X + 34, y, 88, colour,
+            self.field(target + "Hex", FIELD_X + 34, y, 72, colour,
                        callback=self.hexEdited, align=NSTextAlignmentLeft)
             y += FIELD_H + 8
 
@@ -3189,19 +3219,19 @@ class KINOMAT(object):
         self.colOff = 0
 
         # ---------------- the stage ------------------------------------------
-        self.previewArea = (stageX + 20, 20, stageW - 40, stageH - 40)
+        self.previewArea = (stageX + 6, 6, stageW - 12, stageH - 12)
         # the picture fills the stage it is given, up to the cap: drawing it
         # larger than that costs more than it shows
-        self.canvasMax = (min(CANVAS_MAX_W, stageW - 60),
-                          min(CANVAS_MAX_H, stageH - 60))
+        self.canvasMax = (min(CANVAS_MAX_W, stageW - CANVAS_MARGIN * 2),
+                          min(CANVAS_MAX_H, stageH - CANVAS_MARGIN * 2))
         self.previewFitted = None
-        self.w.preview = vanilla.ImageView((stageX + 20, 20, stageW - 40,
-                                            stageH - 40), scale="proportional")
+        self.w.preview = vanilla.ImageView((stageX + 6, 6, stageW - 12,
+                                            stageH - 12), scale="proportional")
 
         # ---------------- transport ------------------------------------------
         laneX = COL_W + ZONE_PAD          # MOTION stands to the left of them
         laneR = winW - ZONE_PAD
-        y = laneY + 10
+        y = laneY + 8
         self.pill("play", laneX, y, 30, 30, "", self.togglePlay,
                   fill=ACCENT, colour=NSColor.whiteColor(), radius=8)
         self.showTransport()
@@ -3225,21 +3255,21 @@ class KINOMAT(object):
         self.caption("durUnit", FIELD_X + 66, y + 4, 12, "s", INK_MUTED, 11)
         self.field("fps", FIELD_X + 84, y, 52, "30")
         self.caption("fpsUnit", FIELD_X + 142, y + 4, 24, "fps", INK_MUTED, 11)
-        y += FIELD_H + 8
+        y += FIELD_H + 4
 
         self.rowLabel("lbEase", y - 1, "Easing")
         self.popup("ease", FIELD_X, y, FIELD_W, EASE_NAMES)
         self.w.ease.set(3)
-        y += POPUP_H + 8
+        y += POPUP_H + 4
 
         self.rowLabel("lbLoop", y - 1, "Loop")
         self.popup("mode", FIELD_X, y, FIELD_W, MODES)
-        y += POPUP_H + 8
+        y += POPUP_H + 4
 
         self.rowLabel("lbUnit", y - 1, "Animate")
         self.popup("unit", FIELD_X, y, FIELD_W, UNITS,
                    callback=self.pickUnit)
-        y += POPUP_H + 8
+        y += POPUP_H + 4
 
         self.rowLabel("lbRepeat", y, "Repeat")
         self.field("loops", FIELD_X, y, 52, "3")
@@ -3249,11 +3279,11 @@ class KINOMAT(object):
         # ---------------- one lane per axis -----------------------------------
         # a static font has no axes: the title names what the lanes move
         # instead, and the hint says why
-        self.sectionTitle("hdAxes", laneX + 2, laneY + 54,
+        self.sectionTitle("hdAxes", laneX + 2, laneY + 45,
                           "SIZE · TRACKING" if self.static else "AXES", 160)
         trouble = bool(getattr(self, "noVariableExport", False) or
                        (self.static and getattr(self, "variableTrouble", None)))
-        self.caption("axesHint", laneR - 460, laneY + 52, 460, self.axesHintText(),
+        self.caption("axesHint", laneR - 460, laneY + 43, 460, self.axesHintText(),
                      ACCENT_TEXT if trouble else INK_FAINT, 12 if trouble else 10,
                      align=NSTextAlignmentRight, height=16,
                      weight=NSFontWeightBold if trouble else None)
@@ -3263,11 +3293,11 @@ class KINOMAT(object):
         # are different ideas, so ticking one lets the other go
         heading = "SIZE \u00b7 TRACKING" if self.static else "AXES"
         boxX = laneX + 2 + int(textWidth(heading, uiFont(10, NSFontWeightBold))) + 34
-        self.alternateCheck = self.check("alternateBox", boxX, laneY + 49, 84,
+        self.alternateCheck = self.check("alternateBox", boxX, laneY + 40, 84,
                                          "Alternate", False, self.toggleAlternate)
-        self.randomCheck = self.check("randomBox", boxX + 90, laneY + 49, 78,
+        self.randomCheck = self.check("randomBox", boxX + 90, laneY + 40, 78,
                                       "Random", False, self.toggleRandom)
-        self.sliderCheck = self.check("sliderBox", boxX + 174, laneY + 49, 74,
+        self.sliderCheck = self.check("sliderBox", boxX + 174, laneY + 40, 74,
                                       "Sliders", False, self.settingsChanged)
 
         liveX = laneR - 52
@@ -3282,7 +3312,7 @@ class KINOMAT(object):
         trackX = minX + 46
         trackW = maxX - 12 - trackX
 
-        y = laneY + 75
+        y = laneY + 65
         for i, ax in enumerate(self.axes):
             self.axisChecks.append(
                 self.check("axCheck%d" % i, laneX, y, 78, ax["name"],
@@ -3294,9 +3324,9 @@ class KINOMAT(object):
                            lambda sender, k=i: self.toggleHide(k),
                            height=LANE_H))
             unit = ax.get("unit", "")
-            self.caption("axMin%d" % i, minX, y + 10, 34,
+            self.caption("axMin%d" % i, minX, y + 8, 34,
                          "%g%s" % (ax["min"], unit), INK_FAINT, 10)
-            group = vanilla.Group((trackX, y + 3, trackW, 28))
+            group = vanilla.Group((trackX, y + 1, trackW, 28))
             setattr(self.w, "axGroup%d" % i, group)
             slider = RangeSlider.alloc().initWithFrame_(((0, 0), (trackW, 28)))
             slider.mn, slider.mx = ax["min"], ax["max"]
@@ -3306,21 +3336,21 @@ class KINOMAT(object):
             slider.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
             group.getNSView().addSubview_(slider)
             self.sliders.append(slider)
-            self.caption("axMax%d" % i, maxX, y + 10, 34,
+            self.caption("axMax%d" % i, maxX, y + 8, 34,
                          "%g%s" % (ax["max"], unit),
                          INK_FAINT, 10, align=NSTextAlignmentRight)
-            self.field("axFrom%d" % i, fromX, y + 6, 56,
+            self.field("axFrom%d" % i, fromX, y + 4, 56,
                        "%g" % ax.get("from", ax["min"]), size=11, height=22)
-            self.caption("axArrow%d" % i, arrowX - 2, y + 9, 14, "→",
+            self.caption("axArrow%d" % i, arrowX - 2, y + 7, 14, "→",
                          INK_FAINT, 11)
-            self.field("axTo%d" % i, toX, y + 6, 56,
+            self.field("axTo%d" % i, toX, y + 4, 56,
                        "%g" % ax.get("to", ax["max"]), size=11, height=22)
-            self.caption("axNow%d" % i, liveX, y + 9, 52, "", ACCENT, 11,
+            self.caption("axNow%d" % i, liveX, y + 7, 52, "", ACCENT, 11,
                          align=NSTextAlignmentRight, weight=NSFontWeightSemibold)
             y += LANE_H
 
         # ---------------- export, last ----------------------------------------
-        y = exportY + 11
+        y = exportY + 7
         x = ZONE_PAD                      # the bar is the panel's, not a lane's
         width = int(textWidth("Export MP4", uiFont(12, NSFontWeightSemibold))) + 36
         self.pill("mp4", x, y, width, 30, "Export MP4", self.exportMP4,
@@ -3362,11 +3392,11 @@ class KINOMAT(object):
             "and nowhere else.")
         self.paintCodec()
 
-        self.caption("status", laneR - 340, exportY + 19, 340, "",
+        self.caption("status", laneR - 340, exportY + 15, 340, "",
                      INK_STATUS, 11, align=NSTextAlignmentRight, height=14)
-        self.zone("progressTrack", (laneR - PROGRESS_W, exportY + 37,
+        self.zone("progressTrack", (laneR - PROGRESS_W, exportY + 33,
                                     PROGRESS_W, 3), LINE_FIELD)
-        self.zone("progressFill", (laneR - PROGRESS_W, exportY + 37, 0, 3),
+        self.zone("progressFill", (laneR - PROGRESS_W, exportY + 33, 0, 3),
                   ACCENT)
         for name in ("progressTrack", "progressFill"):
             view = getattr(self.w, name).getNSView()
@@ -4380,6 +4410,8 @@ class KINOMAT(object):
             return
         if self.kept is None or self.stuck:
             return
+        if self.cycleCheck.on and self.wholeTried:
+            return
         letters, needed = self.letters, None
         if not self.cycleCheck.on:
             letters = self.letters | frozenset(
@@ -4409,8 +4441,13 @@ class KINOMAT(object):
             self.letters = letters
         self.settingsChanged()
         spent = time.time() - started
+        self.wholeTried = needed is None
         if kept is None:
             self.w.status.set("Whole font exported in %.1f s" % spent)
+        elif needed is None:
+            self.w.status.set("Font exported without %d glyphs that will not "
+                              "compile \u00b7 see the Macro panel"
+                              % (len(self.font.glyphs) - len(kept)))
         else:
             self.w.status.set("New letters exported in %.1f s \u00b7 %d of %d glyphs"
                               % (spent, len(kept), needed[2]))
@@ -5357,6 +5394,7 @@ class KINOMAT(object):
         self.staticOf = None
         self.charset = None
         self.stuck = False
+        self.wholeTried = False
         self.absent = frozenset()
         self.vfName = settingName(self.font, wanted)
         missing = None

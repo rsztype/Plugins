@@ -30,28 +30,6 @@ image = Image.open(SOURCE).convert("RGBA")   # the shadow round the window is tr
 w, h = image.size
 draw = ImageDraw.Draw(image)
 
-# the window's own title still names the version the picture was taken with:
-# it is written again, in the system font, sized to cover the old one exactly
-OLD_TITLE, TITLE_BOX = "Industria Serif \u2013 Kinomat 0.59", (143, 50, 336, 59)
-try:
-    def systemFont(px):
-        try:
-            f = ImageFont.truetype("/System/Library/Fonts/SFNS.ttf", px)
-        except OSError:
-            return ImageFont.truetype(TITLE_FONT, px)
-        try: f.set_variation_by_name("Semibold")
-        except Exception: pass
-        return f
-    want = TITLE_BOX[2] - TITLE_BOX[0]
-    px = min(range(8, 30), key=lambda n: abs(draw.textlength(OLD_TITLE, font=systemFont(n)) - want))
-    tf = systemFont(px)
-    draw.rectangle((TITLE_BOX[0] - 3, TITLE_BOX[1] - 6, TITLE_BOX[2] + 12, TITLE_BOX[3] + 6), fill=(255, 255, 255, 255))
-    capTop = draw.textbbox((0, 0), "I", font=tf)[1]
-    draw.text((TITLE_BOX[0], TITLE_BOX[1] - capTop), "Industria Serif \u2013 Kinomat " + version,
-              font=tf, fill=(77, 77, 79, 255))
-except OSError:
-    pass
-
 # the badge sits on the top right corner of the window, big enough to be
 # read in the Plugin Manager's small preview
 size = round(w * 0.03)
@@ -67,7 +45,7 @@ box = draw.textbbox((0, 0), label, font=font)
 tw, th = box[2] - box[0], box[3] - box[1]
 padX, padY = round(size * 0.6), round(size * 0.4)
 bw, bh = tw + 2 * padX, th + 2 * padY
-CORNER = (1222, 40)                 # the window's top right corner in the screenshot
+CORNER = (1223, 39)                 # the window's top right corner in the screenshot
 x0 = min(w - 4 - bw, CORNER[0] - bw // 2)
 y0 = max(4, CORNER[1] - bh // 2)
 x1, y1 = x0 + bw, y0 + bh
