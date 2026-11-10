@@ -33,7 +33,8 @@ from AppKit import (NSColor, NSImage, NSTimer, NSColorSpace,
     NSEventTypeRightMouseDown, NSEventTypeRightMouseUp,
     NSEventTypeRightMouseDragged, NSEventTypeOtherMouseDown,
     NSEventTypeOtherMouseUp, NSEventTypeOtherMouseDragged,
-    NSEventTypeKeyDown, NSEventTypeKeyUp, NSEventTypeScrollWheel)
+    NSEventTypeKeyDown, NSEventTypeKeyUp, NSEventTypeScrollWheel,
+    NSWindowStyleMaskResizable, NSWindowCollectionBehaviorFullScreenPrimary)
 from Foundation import (NSData, NSURL, NSAttributedString, NSRunLoop, NSDate,
     NSMutableAttributedString, NSDefaultRunLoopMode)
 # vanilla, Quartz and CoreText cost about a fifth of a second to import
@@ -2026,6 +2027,8 @@ WIN_MAX_W = 1440                     # on a large screen it stops growing here
 WIN_MIN_W = SIDE_W + 520             # and the stage is never narrower than this
 CANVAS_MAX_W, CANVAS_MAX_H = 1400, 1000
 CANVAS_MARGIN = 6                    # air around the picture in the stage
+ZOOM_MIN = 0.75                      # the corner takes the panel down to this much
+                                     # of the size it opens at, and no smaller
 UI_SCALE = 0.8                       # the whole panel is laid out at full size
                                      # and drawn four fifths of it: it came out
                                      # too large on the screen, and one
@@ -2754,6 +2757,66 @@ class KINOMAT(object):
         self.paintPill(control, title, **kwargs)
         return control
 
+    def makeZoomable(self, designW, designH):
+        """
+        The green button, and the window's corner: the whole panel larger or
+        smaller, all of it together.
+
+        The layout is one size, drawn at a scale (see drawSmaller), so the
+        window does not lay itself out again when it changes size: the scale
+        changes instead. Dragging keeps the panel's own shape; full screen
+        does not have it, so the panel stands centred at the largest scale
+        that fits and the window's ground shows either side.
+        """
+        self.design = (designW, designH)
+        self.uiScale = UI_SCALE
+        window = self.w.getNSWindow()
+        try:
+            window.setStyleMask_(window.styleMask() | NSWindowStyleMaskResizable)
+            window.setCollectionBehavior_(window.collectionBehavior() |
+                                          NSWindowCollectionBehaviorFullScreenPrimary)
+            window.setContentAspectRatio_((designW, designH))
+            window.setContentMinSize_((designW * UI_SCALE * ZOOM_MIN,
+                                       designH * UI_SCALE * ZOOM_MIN))
+            window.setContentMaxSize_((designW * 4.0, designH * 4.0))
+            window.setBackgroundColor_(SURF_SIDE)
+            scale = getattr(self, "openScale", None)
+            if scale and abs(scale - UI_SCALE) > 1e-3:
+                window.setContentSize_((int(round(designW * scale)),
+                                        int(round(designH * scale))))
+            self.w.bind("resize", self.windowResized)
+        except Exception as trouble:
+            print("Kinomat \u2014 the window will not grow: %s" % trouble)
+        self.fitScale()
+
+    def fitScale(self):
+        """The layout fitted to the window as it is now: centred, one scale."""
+        try:
+            view = self.w.getNSWindow().contentView()
+            size = view.frame().size
+            dw, dh = self.design
+            scale = min(size.width / float(dw), size.height / float(dh))
+            if scale <= 0:
+                return
+            bw, bh = size.width / scale, size.height / scale
+            view.setBounds_(((-(bw - dw) / 2.0, -(bh - dh) / 2.0), (bw, bh)))
+            view.setNeedsDisplay_(True)
+            self.uiScale = scale
+        except Exception:
+            pass
+
+    def windowResized(self, sender=None):
+        before = getattr(self, "uiScale", UI_SCALE)
+        self.fitScale()
+        # the picture is drawn again at the new density, unless the film is
+        # running and does it on its own
+        if abs(self.uiScale - before) > 1e-3 and not self.playing and \
+                hasattr(self, "_backing"):
+            try:
+                self.drawPreview()
+            except Exception:
+                pass
+
     def place(self, control, rect):
         """
         Move a piece that is already made to a rectangle of the layout.
@@ -3405,6 +3468,7 @@ class KINOMAT(object):
 
         self.styleUI()
         drawSmaller(self.w.getNSWindow(), (winW, winH))
+        self.makeZoomable(winW, winH)
         # built again around another variable setting: it opens at the corner
         # the one before it stood at, before it is shown rather than after, so
         # there is nothing to see of the move
@@ -4112,8 +4176,10 @@ class KINOMAT(object):
         maxW, maxH = getattr(self, "canvasMax", (CANVAS_MAX_W, CANVAS_MAX_H))
         fit = min(float(maxW) / cw, float(maxH) / ch, 1.0)
         pw, ph = max(2, int(cw * fit)), max(2, int(ch * fit))
-        # render at the screen's physical resolution, not at point size
-        bs = self._backing
+        # render at the screen's physical resolution, not at point size: a
+        # layout point is uiScale of a screen point, more than one when the
+        # window has been made larger
+        bs = self._backing * max(1.0, getattr(self, "uiScale", UI_SCALE))
         progress = self.progressAt(self.phase)
         values = self.axisValues(progress)
         for i, (ident, a, b) in enumerate(self.cfg["ranges"]):
@@ -5424,6 +5490,7 @@ class KINOMAT(object):
             try:
                 frame = old.getNSWindow().frame()
                 self.openAt = (frame.origin.x, frame.origin.y + frame.size.height)
+                self.openScale = getattr(self, "uiScale", UI_SCALE)
             except Exception:
                 self.openAt = None
             self.playing = False
@@ -5435,6 +5502,7 @@ class KINOMAT(object):
                 pass
             self.rebuilding = False
             self.openAt = None
+            self.openScale = None
             if carried is not None:
                 try:
                     missing = self.applyProject(carried)
