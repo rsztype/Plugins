@@ -1479,7 +1479,7 @@ def variableDesign(font):
         masters = list(font.masters)
     except Exception:
         return True
-    if len(masters) < 2:
+    if not masters:
         return False
     places = []
     for master in masters:
@@ -1491,7 +1491,42 @@ def variableDesign(font):
             places.append(tuple(round(float(v), 3) for v in values))
         except Exception:
             return True
-    return len(set(places)) == len(places)
+    if len(set(places)) != len(places):
+        return False
+    # a Virtual Master is a place of the space too: one master and a virtual
+    # one, with the shapes of the far end in brace layers, is a design space
+    # a variable font is built from — Glyphs exports it, and it used to
+    # come up here as a static font with Size and Tracking for lanes
+    return len(set(places) | set(virtualPlaces(font, places[0]))) >= 2
+
+
+def virtualPlaces(font, fallback):
+    """
+    The places of the Virtual Master parameters in Font Info, in the order of
+    the axes, as the masters' places are read. An axis a parameter leaves out
+    stands where the first master does.
+    """
+    out = []
+    try:
+        names = [str(axis.name) for axis in font.axes]
+        params = list(font.customParameters)
+    except Exception:
+        return out
+    for param in params:
+        try:
+            if str(param.name) != "Virtual Master":
+                continue
+            if not getattr(param, "active", True):
+                continue
+            where = {}
+            for entry in list(param.value or []):
+                entry = dict(entry)
+                where[str(entry.get("Axis"))] = float(entry.get("Location"))
+            out.append(tuple(round(where.get(name, fallback[n] if n < len(fallback) else 0.0), 3)
+                             for n, name in enumerate(names)))
+        except Exception:
+            continue
+    return out
 
 
 def exportsAtAll(instance):

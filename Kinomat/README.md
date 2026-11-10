@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.93** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.94** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -26,13 +26,15 @@ The Pro key goes in the top right of the panel, beside the name of the font: the
 
 ### The panel
 
+The green button takes the panel to full screen, and the window's corner makes the whole of it larger or smaller.
+
 The panel opens as you left it: every setting below is kept when the window closes, or when Glyphs quits with it open, and comes back the next time. Lanes return by axis tag, so a font with other axes keeps its own; media behind the word returns with the Pro key.
 
 **PROJECT** — `Save…` and `Open…` write and read a `.rsztools` project: every setting below, the font excluded, since a project takes the font of the Glyphs file that is open. *Pro.*
 
 **FONT** — `Export` picks which of the document's variable exports is filmed, naming each one, with the family in front where they do not all make the same one. The row appears only when there is more than one to choose. Changing it rebuilds the lanes around the new axes and carries the rest of the panel across.
 
-A document with axes films its **variable font export** from *Font Info ▸ Exports*. Without one, the panel opens on the static font of the master in front, with Size and Tracking for lanes, and the panel says so in orange beside the lanes. A variable export that fails — glyphs not compatible across masters — opens the same way, naming the glyphs.
+A document with axes films its **variable font export** from *Font Info ▸ Exports*. A design space of one master and a **Virtual Master** (*Font Info ▸ Font ▸ Custom Parameters*), with the far end drawn in brace layers, is a variable font too: its axis gets a lane like any other. Without one, the panel opens on the static font of the master in front, with Size and Tracking for lanes, and the panel says so in orange beside the lanes. A variable export that fails — glyphs not compatible across masters — opens the same way, naming the glyphs.
 
 **TEXT**
 
