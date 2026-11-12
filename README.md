@@ -6,9 +6,9 @@ https://resistenza.es/glyphs/
 
 ## Contents
 
-- [**🎥 Kinomat**](Kinomat/) `v0.92` — turns your variable font into a short animation: type a word, choose which axes move, export MP4, GIF or a PNG sequence. Exporting needs a Pro key. **[Manual →](https://resistenza.es/glyphs/kinomat.html)**
+- [**🎥 Kinomat**](Kinomat/) `v0.98` — turns your variable font into a short animation: type a word, choose which axes move, export MP4, GIF or a PNG sequence. A virtual master animates like any other, and a click on a letter gives it a colour of its own. Exporting needs a Pro key. **[Manual →](https://resistenza.es/glyphs/kinomat.html)**
 
-- [**🔢 Numeratore**](https://github.com/rsztype/Numeratore) `v2.04` — adds an Increase Vers. switch to the inspector that increments a font's version by `0.001` and saves on every export. Living in its own repository.
+- [**🔢 Numeratore**](https://github.com/rsztype/Numeratore) `v2.05` — adds an Increase Vers. switch to the inspector that increments a font's version by `0.001` and saves on every export. Living in its own repository.
 
 - [**🔢 Increase Font Version on Export**](Increase%20Font%20Version%20on%20Export/) `v1.0` — like Numeratore, but without the palette: a real tick box in Font Info's Custom Parameters, no interface of its own.
 
