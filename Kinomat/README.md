@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.94** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 0.98** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -48,6 +48,7 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 | `Align` | left, centre, right |
 | `Ligatures` | **liga** standard ones, clig with them · **dlig** the discretionary ones. Measured as they are drawn |
 | `Outlines` | the letters drawn as outlines only, in the Ink colour |
+| a letter's colour | click a letter on the stage: a box of swatches gives it a colour of its own — the house colours, the wheel, lighter and darker, a hex to type, or any colour from the system's panel. *Ink* gives it back. The colour stays with the letter as the text is edited, and is saved in the project |
 | `Cycle` | instead of the word, the font's glyphs one after another, components included. Glyphs whose curves cannot be made compatible between masters are left out, and the panel says how many |
 
 **CANVAS**
@@ -76,7 +77,7 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 | `Easing` | Linear · Ease In · Ease Out · Ease In-Out · Sine In-Out · Expo In-Out · Back In-Out · Elastic Out · Bounce Out |
 | `Loop` | **Ping-pong** out and back · **Restart** out and from the start again · **Play once** |
 | `Animate` | **Whole** the text as one · **Words** · **Letters**, each piece a step behind the one before. A single word has nothing to divide, and the panel says so |
-| `Repeat` | how many times the loop runs in the exported file |
+| `Repeat` | how many times the loop runs in the MP4. Beside it, how long the MP4 comes out: Duration × Repeat, or one loop with Play once. A GIF plays one loop, forever |
 
 **THE LANES** — one per axis, then **Size** and **Tracking**, always. With axes those two start switched off; with none they are the whole film.
 

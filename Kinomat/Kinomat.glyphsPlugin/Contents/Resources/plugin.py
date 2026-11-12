@@ -34,7 +34,8 @@ from AppKit import (NSColor, NSImage, NSTimer, NSColorSpace,
     NSEventTypeRightMouseDragged, NSEventTypeOtherMouseDown,
     NSEventTypeOtherMouseUp, NSEventTypeOtherMouseDragged,
     NSEventTypeKeyDown, NSEventTypeKeyUp, NSEventTypeScrollWheel,
-    NSWindowStyleMaskResizable, NSWindowCollectionBehaviorFullScreenPrimary)
+    NSWindowStyleMaskResizable, NSWindowCollectionBehaviorFullScreenPrimary,
+    NSPopover, NSViewController, NSColorPanel)
 from Foundation import (NSData, NSURL, NSAttributedString, NSRunLoop, NSDate,
     NSMutableAttributedString, NSDefaultRunLoopMode)
 # vanilla, Quartz and CoreText cost about a fifth of a second to import
@@ -406,13 +407,75 @@ def cgColorFromNSColor(color):
             Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB), parts)
 
 
-def _line(txt, ctfont, color, kern=0.0):
+def _line(txt, ctfont, color, kern=0.0, colourAt=None, base=0):
+    """A line of text, ready to draw. colourAt holds the letters that have a
+    colour of their own, by where they stand in the whole text; base is where
+    this piece starts in it. The rest are in color. The stroke colour goes
+    with the fill, for Outlines."""
     attrs = {CoreText.kCTFontAttributeName: ctfont,
              CoreText.kCTForegroundColorAttributeName: color}
     if kern:
         attrs[CoreText.kCTKernAttributeName] = kern
-    astr = NSAttributedString.alloc().initWithString_attributes_(txt, attrs)
+    if not colourAt:
+        astr = NSAttributedString.alloc().initWithString_attributes_(txt, attrs)
+        return CoreText.CTLineCreateWithAttributedString(astr)
+    astr = NSMutableAttributedString.alloc().initWithString_attributes_(txt, attrs)
+    at = 0
+    for j, ch in enumerate(txt):
+        units = len(ch.encode("utf-16-le")) // 2   # NSString counts in UTF-16
+        colour = colourAt.get(base + j)
+        if colour is not None:
+            astr.addAttribute_value_range_(
+                CoreText.kCTForegroundColorAttributeName, colour, (at, units))
+            astr.addAttribute_value_range_(
+                CoreText.kCTStrokeColorAttributeName, colour, (at, units))
+        at += units
     return CoreText.CTLineCreateWithAttributedString(astr)
+
+
+def lineStarts(text):
+    """Where each line of the text starts in it, the lines split as the frame
+    splits them, so a letter is found by its line and its place in it."""
+    starts, at = [], 0
+    for line in text.splitlines(True):
+        starts.append(at)
+        at += len(line)
+    return starts or [0]
+
+
+def shiftedColours(colours, old, new):
+    """The letters' colours after the text changed from old to new: what stands
+    before the edit keeps its place, what stands after it moves with it, and
+    the letters typed over lose theirs. The edit is the stretch between the
+    longest common start and the longest common end."""
+    if old == new or not colours:
+        return dict(colours or {})
+    head = 0
+    limit = min(len(old), len(new))
+    while head < limit and old[head] == new[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and old[-1 - tail] == new[-1 - tail]:
+        tail += 1
+    moved = len(new) - len(old)
+    out = {}
+    for index, colour in colours.items():
+        if index < head:
+            out[index] = colour
+        elif index >= len(old) - tail:
+            out[index + moved] = colour
+    return out
+
+
+# the swatch box a letter opens with a click: the house colours first, then
+# the wheel full, then lighter and darker
+LETTER_SWATCHES = [
+    "#FFFFFF", "#D9D9D9", "#A6A6A6", "#737373", "#404040", "#0B0B0D", "#FF4D00", "#FFD400",
+    "#FF1744", "#FF6D00", "#FFAB00", "#FFEA00", "#76FF03", "#00E676", "#1DE9B6", "#00E5FF",
+    "#00B0FF", "#2979FF", "#3D5AFE", "#651FFF", "#D500F9", "#F50057", "#C51162", "#6D4C41",
+    "#FFCDD2", "#FFE0B2", "#FFF9C4", "#C8E6C9", "#B2EBF2", "#BBDEFB", "#D1C4E9", "#F8BBD0",
+]
+SWATCH_SIDE, SWATCH_GAP, SWATCH_COLS, SWATCH_PAD = 22, 5, 8, 12
 
 
 _BLACK = []          # made on first use: Quartz is not here yet at import
@@ -575,7 +638,15 @@ def shrunk(image, w, h):
 def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
                 bgColor, fgColor, align, unit="Whole", track=0.0, sliders=None,
                 backdrop=None, zoom=1.0, turn=0.0, bright=0.0, contrast=0.0,
-                ink=None, features=None, textTurn=0.0, outlines=False):
+                ink=None, features=None, textTurn=0.0, outlines=False,
+                letterColours=None, starts=None, hits=None):
+    """A frame of the film, as a CGImage.
+
+    letterColours: the letters with a colour of their own, as CGColors keyed
+    by where they stand in the text; starts: where each line starts in it.
+    hits, a list, is filled with where each letter landed — its place in the
+    text and its box, before the text's rotation — so a click on the stage
+    can find the letter under it."""
     cs = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
     ctx = Quartz.CGBitmapContextCreate(None, int(w), int(h), 8, 0, cs,
                                        Quartz.kCGImageAlphaPremultipliedLast)
@@ -639,6 +710,8 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
         Quartz.CGContextSetStrokeColorWithColor(ctx, fgColor)
         Quartz.CGContextSetLineWidth(ctx, max(1.0, min(w, h) * 0.003))
 
+    if starts is None or len(starts) < len(lines):
+        letterColours = None        # no way to tell which letter is which
     for i, txt in enumerate(lines):
         pieces = blocks[i]
         # each piece gets its own font at its own point in the cycle, and is
@@ -647,6 +720,7 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
         drawn = []
         total = 0.0
         kern = 0.0
+        base = starts[i] if starts is not None and i < len(starts) else 0
         for k, piece in enumerate(pieces):
             scale, tracked, variations = laneShares(
                 variationsAt(unitProgress(progress, firstOf[i] + k,
@@ -657,9 +731,10 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
             line = _line(piece,
                          variedFont(baseFont, size * scale, variations,
                                     features),
-                         fgColor, kern)
+                         fgColor, kern, letterColours, base)
             wid = CoreText.CTLineGetTypographicBounds(line, None, None, None)[0]
-            drawn.append((line, wid))
+            drawn.append((line, wid, piece, base))
+            base += len(piece)
             total += wid
         total -= kern           # the space after the last glyph of the line
 
@@ -670,9 +745,34 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
             x = w - margin - total
         else:
             x = (w - total) / 2.0
-        for line, wid in drawn:
+        for line, wid, piece, first in drawn:
+            if hits is not None and starts is not None:
+                # each letter's box: across, from where it starts in the line
+                # to where the next one does; up, the line's own ascent and
+                # descent
+                _, up, down, _ = CoreText.CTLineGetTypographicBounds(
+                    line, None, None, None)
+                at = 0
+                for j, ch in enumerate(piece):
+                    units = len(ch.encode("utf-16-le")) // 2
+                    if not ch.isspace():
+                        x0 = CoreText.CTLineGetOffsetForStringIndex(line, at, None)[0]
+                        x1 = CoreText.CTLineGetOffsetForStringIndex(line, at + units, None)[0]
+                        hits.append((first + j, x + min(x0, x1), x + max(x0, x1),
+                                     y - down, y + up))
+                    at += units
             Quartz.CGContextSetTextPosition(ctx, x, y)
-            CoreText.CTLineDraw(line, ctx)
+            if outlines and letterColours:
+                # CoreText fills in each letter's colour but strokes in the
+                # context's: drawn a run at a time, the stroke is set to the
+                # run's own colour first
+                for run in CoreText.CTLineGetGlyphRuns(line):
+                    colour = CoreText.CTRunGetAttributes(run).get(
+                        CoreText.kCTForegroundColorAttributeName)
+                    Quartz.CGContextSetStrokeColorWithColor(ctx, colour or fgColor)
+                    CoreText.CTRunDraw(run, ctx, (0, 0))
+            else:
+                CoreText.CTLineDraw(line, ctx)
             x += wid
 
     if outlines:
@@ -2195,6 +2295,114 @@ StageBack = RSZCinemaStageV1
 
 
 try:
+    RSZCinemaLetterClickV1 = objc.lookUpClass("RSZCinemaLetterClickV1")
+except Exception:
+    class RSZCinemaLetterClickV1(NSView):
+        """A clear pane over the picture on the stage: a click on a letter
+        asks the panel for its swatch box. owner is the panel."""
+
+        def acceptsFirstMouse_(self, event):
+            return True
+
+        def mouseDown_(self, event):
+            owner = getattr(self, "owner", None)
+            if owner is None:
+                return
+            point = self.convertPoint_fromView_(event.locationInWindow(), None)
+            owner.stageClicked(self, point)
+
+LetterClick = RSZCinemaLetterClickV1
+
+
+try:
+    RSZCinemaSwatchesV2 = objc.lookUpClass("RSZCinemaSwatchesV2")
+except Exception:
+    class RSZCinemaSwatchesV2(NSView):
+        """
+        The swatch box a letter opens: the letter and a field to type its
+        colour on top, a grid of swatches, and Ink, Custom and Clear all under
+        it. owner is the panel; current is the letter's colour as hex, None
+        while it is in Ink; letter is the letter itself; field the hex field.
+        """
+
+        def isFlipped(self):
+            return True
+
+        def gridOrigin(self):
+            return SWATCH_PAD, SWATCH_PAD + 24
+
+        def drawRect_(self, rect):
+            NSColor.windowBackgroundColor().set()
+            NSBezierPath.fillRect_(self.bounds())
+            current = getattr(self, "current", None)
+            title = getattr(self, "letter", "") or ""
+            NSAttributedString.alloc().initWithString_attributes_(
+                title, {NSFontAttributeName: NSFont.systemFontOfSize_weight_(
+                    14, NSFontWeightSemibold),
+                    NSForegroundColorAttributeName: NSColor.labelColor()}
+            ).drawAtPoint_((SWATCH_PAD, SWATCH_PAD - 2))
+            x0, y0 = self.gridOrigin()
+            for k, code in enumerate(LETTER_SWATCHES):
+                col, row = k % SWATCH_COLS, k // SWATCH_COLS
+                box = ((x0 + col * (SWATCH_SIDE + SWATCH_GAP),
+                        y0 + row * (SWATCH_SIDE + SWATCH_GAP)),
+                       (SWATCH_SIDE, SWATCH_SIDE))
+                path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                    box, 5, 5)
+                nsColorFromHex(code).set()
+                path.fill()
+                NSColor.colorWithWhite_alpha_(0.0, 0.18).set()
+                path.setLineWidth_(1.0)
+                path.stroke()
+                if current and current.upper() == code.upper():
+                    ring = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                        ((box[0][0] - 3, box[0][1] - 3),
+                         (SWATCH_SIDE + 6, SWATCH_SIDE + 6)), 7, 7)
+                    ring.setLineWidth_(2.0)
+                    NSColor.labelColor().set()
+                    ring.stroke()
+
+        def mouseDown_(self, event):
+            point = self.convertPoint_fromView_(event.locationInWindow(), None)
+            x0, y0 = self.gridOrigin()
+            step = SWATCH_SIDE + SWATCH_GAP
+            col = int((point.x - x0) // step)
+            row = int((point.y - y0) // step)
+            inside = (0 <= col < SWATCH_COLS and row >= 0 and
+                      (point.x - x0) - col * step <= SWATCH_SIDE and
+                      (point.y - y0) - row * step <= SWATCH_SIDE)
+            index = row * SWATCH_COLS + col
+            if inside and index < len(LETTER_SWATCHES):
+                self.owner.letterColourPicked(LETTER_SWATCHES[index])
+
+        def inkClicked_(self, sender):
+            self.owner.letterColourPicked(None)
+
+        def customClicked_(self, sender):
+            self.owner.openLetterColourPanel()
+
+        def clearClicked_(self, sender):
+            self.owner.clearLetterColours()
+
+        def panelChanged_(self, panel):
+            self.owner.letterPanelChanged(panel)
+
+        def controlTextDidChange_(self, note):
+            # the colour follows the field as it is typed
+            self.owner.letterHexTyped(note.object().stringValue(), True)
+
+        def hexTyped_(self, sender):
+            # Return: the colour is taken and the box closes
+            self.owner.letterHexTyped(sender.stringValue(), False)
+
+Swatches = RSZCinemaSwatchesV2
+
+# the swatch views a colour panel may still be pointing at: the panel does not
+# keep its target alive, so they are kept here for as long as Glyphs runs
+_SWATCH_VIEWS = []
+
+
+try:
     RSZCinemaCheckV1 = objc.lookUpClass("RSZCinemaCheckV1")
 except Exception:
     class RSZCinemaCheckV1(NSView):
@@ -2501,6 +2709,11 @@ class KINOMAT(object):
     realTime = True             # the film takes its time from the video behind
     ownTime = None              # the Duration and fps typed before it did
     tintOn = False              # Colorize
+    letterHexes = None          # a letter's own colour, by its place in the text
+    lastLetterText = None       # the text those places were counted on
+    letterHits = None           # where the letters of the frame on show stand
+    letterPick = None           # the letter the swatch box is open for
+    letterPopover = None
     tintCache = None            # a still's two-colour version, and what it was of
     vfName = ""                 # the variable setting being filmed, when there are several
 
@@ -3325,6 +3538,14 @@ class KINOMAT(object):
         self.previewFitted = None
         self.w.preview = vanilla.ImageView((stageX + 6, 6, stageW - 12,
                                             stageH - 12), scale="proportional")
+        # a clear pane over the picture: a click on a letter opens its swatches
+        clicks = LetterClick.alloc().initWithFrame_(
+            ((0, 0), (stageW - 12, stageH - 12)))
+        clicks.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        clicks.owner = self
+        self.w.preview.getNSImageView().addSubview_(clicks)
+        self.w.preview.getNSImageView().setToolTip_(
+            "Click a letter to give it a colour of its own")
 
         # ---------------- transport ------------------------------------------
         laneX = COL_W + ZONE_PAD          # MOTION stands to the left of them
@@ -3371,7 +3592,7 @@ class KINOMAT(object):
 
         self.rowLabel("lbRepeat", y, "Repeat")
         self.field("loops", FIELD_X, y, 52, "3")
-        self.caption("loopsNote", FIELD_X + 58, y + 4, 110, "× in export",
+        self.caption("loopsNote", FIELD_X + 58, y + 4, 110, "= 6 s in MP4",
                      INK_MUTED, 11)
 
         # ---------------- one lane per axis -----------------------------------
@@ -3780,8 +4001,24 @@ class KINOMAT(object):
             raw.append((a, b))
             # ◈ off: the axis sits still on its From value
             ranges.append((ax["id"], a, b if self.animate[i] else a))
+        # the letters' own colours follow the text as it is edited: a letter
+        # keeps its colour when something is typed before it
+        full = (self.w.text.get() or " ").replace("\\n", "\n")
+        if self.letterHexes is None:
+            self.letterHexes = {}
+        if self.lastLetterText is not None and full != self.lastLetterText:
+            self.letterHexes = shiftedColours(self.letterHexes,
+                                              self.lastLetterText, full)
+        self.lastLetterText = full
+        letterColours = {}
+        for index, colour in self.letterHexes.items():
+            picked = nsColorFromHex(colour)
+            if picked is not None:
+                letterColours[index] = cgColorFromNSColor(picked)
         self.cfg = {
             "canvas": (cw - cw % 2, ch - ch % 2),
+            "letterColours": letterColours or None,
+            "starts": lineStarts(full),
             "lines": (self.w.text.get() or " ").replace("\\n", "\n").splitlines() or [" "],
             "lead": self.clamped(self.w.lead, 110, 40, 300),
             "track": self.clamped(self.w.track, 0, -300, 1000),
@@ -4150,12 +4387,13 @@ class KINOMAT(object):
     def canvasSize(self):
         return self.cfg["canvas"]
 
-    def renderAt(self, progress, w, h, size, at=None, phase=None):
+    def renderAt(self, progress, w, h, size, at=None, phase=None, hits=None):
         """A frame at that point of the cycle; at is its time in the film, in
         seconds, which a video backdrop takes its picture from."""
         c = self.cfg
         lines = c["lines"]
         frames = c.get("frames")
+        starts = c.get("starts")
         if frames:
             # progress is the eased, looped one, so the run breathes with the
             # easing and turns back on itself in ping-pong, like everything else;
@@ -4163,6 +4401,9 @@ class KINOMAT(object):
             at = (phaseToProgress(progress, c["mode"], c["ease"])
                   if (c.get("alternate") or c.get("random")) else progress)
             lines = frames[min(len(frames) - 1, max(0, int(at * len(frames))))]
+            # one glyph at a time: no letter of the text stands where it was
+            # coloured, so the run is all in Ink
+            starts = None
         backdrop, zoom, turn = None, c.get("zoom", 1.0), c.get("turn", 0.0)
         if self.backdrop is not None:
             # a clip filmed on its side carries its own quarter turn: it is
@@ -4187,7 +4428,8 @@ class KINOMAT(object):
                            self.sliderInfo(progress), backdrop, zoom, turn,
                            c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
                            c.get("features"), c.get("textTurn", 0.0),
-                           c.get("outlines", False))
+                           c.get("outlines", False),
+                           c.get("letterColours"), starts, hits)
 
     # -- preview -------------------------------------------------------------
 
@@ -4232,9 +4474,13 @@ class KINOMAT(object):
             self.place(self.w.preview, rect)
             self.place(self.w.canvasBack, rect)
 
+        hits = []
         cg = self.renderAt(progress, int(pw * bs), int(ph * bs),
                            self.cfg["size"] * fit * bs, at=self.clock,
-                           phase=self.phase)
+                           phase=self.phase, hits=hits)
+        # where the letters of this frame stand, for a click on the stage
+        self.letterHits = {"boxes": hits, "w": int(pw * bs), "h": int(ph * bs),
+                           "turn": float(self.cfg.get("textTurn", 0.0) or 0.0)}
         img = NSImage.alloc().initWithCGImage_size_(cg, (pw, ph))
         self.w.preview.setImage(imageObject=img)
 
@@ -4343,6 +4589,198 @@ class KINOMAT(object):
         self.well("fg").set(paper)
         self.colourChanged()
 
+    # -- a letter's own colour: a click on the stage, a box of swatches ------
+
+    def stageClicked(self, view, point):
+        """The letter under the click, found in the boxes the frame on show was
+        drawn with, and its swatch box opened beside it. A click off the
+        letters closes the box."""
+        info = self.letterHits
+        if getattr(self, "exporting", False) or not info or not info["boxes"]:
+            return
+        if self.cfg.get("frames"):
+            self.w.status.set("Cycle shows one glyph at a time: letter colours "
+                              "are for the text")
+            return
+        bounds = view.bounds()
+        if bounds.size.width <= 0 or bounds.size.height <= 0:
+            return
+        px = point.x * info["w"] / bounds.size.width
+        py = point.y * info["h"] / bounds.size.height
+        # the text is drawn turned about the middle: the click is turned back
+        angle = math.radians(info.get("turn", 0.0))
+        if angle:
+            cx, cy = info["w"] / 2.0, info["h"] / 2.0
+            dx, dy = px - cx, py - cy
+            px = cx + dx * math.cos(angle) - dy * math.sin(angle)
+            py = cy + dx * math.sin(angle) + dy * math.cos(angle)
+        best, far = None, None
+        for index, x0, x1, y0, y1 in info["boxes"]:
+            gapX = max(x0 - px, 0.0, px - x1)
+            gapY = max(y0 - py, 0.0, py - y1)
+            distance = math.hypot(gapX, gapY)
+            if far is None or distance < far:
+                best, far = (index, y1 - y0), distance
+        # a little round each letter counts, not the empty paper
+        if best is None or far > best[1] * 0.05:
+            if self.letterPopover is not None:
+                self.letterPopover.close()
+            return
+        self.showLetterBox(best[0], view, point)
+
+    def showLetterBox(self, index, view, point):
+        text = self.lastLetterText or ""
+        self.letterPick = index
+        side = SWATCH_PAD * 2 + SWATCH_COLS * SWATCH_SIDE + \
+            (SWATCH_COLS - 1) * SWATCH_GAP
+        rows = (len(LETTER_SWATCHES) + SWATCH_COLS - 1) // SWATCH_COLS
+        gridH = rows * SWATCH_SIDE + (rows - 1) * SWATCH_GAP
+        height = SWATCH_PAD + 24 + gridH + 12 + 24 + SWATCH_PAD
+        box = Swatches.alloc().initWithFrame_(((0, 0), (side, height)))
+        box.owner = self
+        box.letter = text[index] if 0 <= index < len(text) else ""
+        box.current = self.letterHexes.get(index)
+        # the colour as hex, to type: ffffff, #FFF, as it comes
+        field = NSTextField.alloc().initWithFrame_(
+            ((side - SWATCH_PAD - 104, SWATCH_PAD - 5), (104, 22)))
+        field.setStringValue_((box.current or "").lstrip("#"))
+        field.setPlaceholderString_("hex · Ink")
+        field.setFont_(NSFont.monospacedSystemFontOfSize_weight_(12, NSFontWeightRegular))
+        field.setBezelStyle_(1)                     # rounded
+        field.setDelegate_(box)
+        field.setTarget_(box)
+        field.setAction_("hexTyped:")
+        box.addSubview_(field)
+        box.field = field
+        caption = NSTextField.labelWithString_("#")
+        caption.setFont_(NSFont.monospacedSystemFontOfSize_weight_(12, NSFontWeightRegular))
+        caption.setTextColor_(NSColor.secondaryLabelColor())
+        caption.setFrame_(((side - SWATCH_PAD - 118, SWATCH_PAD - 2), (12, 18)))
+        box.addSubview_(caption)
+        buttonW = (side - SWATCH_PAD * 2 - 12) / 3.0
+        for k, (title, action) in enumerate((("Ink", "inkClicked:"),
+                                             ("Custom…", "customClicked:"),
+                                             ("Clear all", "clearClicked:"))):
+            button = NSButton.alloc().initWithFrame_(
+                ((SWATCH_PAD + k * (buttonW + 6), height - SWATCH_PAD - 24),
+                 (buttonW, 24)))
+            button.setTitle_(title)
+            button.setBezelStyle_(1)                # rounded
+            button.setControlSize_(1)               # small
+            button.setFont_(uiFont(11))
+            button.setTarget_(box)
+            button.setAction_(action)
+            box.addSubview_(button)
+        _SWATCH_VIEWS.append(box)
+        del _SWATCH_VIEWS[:-4]          # the last few are enough to keep alive
+        self.letterSwatches = box
+        if self.letterPopover is not None:
+            self.letterPopover.close()
+        holder = NSViewController.alloc().init()
+        holder.setView_(box)
+        popover = NSPopover.alloc().init()
+        popover.setBehavior_(1)                     # transient: a click away closes it
+        popover.setContentViewController_(holder)
+        popover.setContentSize_((side, height))
+        popover.showRelativeToRect_ofView_preferredEdge_(
+            ((point.x - 2, point.y - 2), (4, 4)), view, 3)   # above the letter
+        self.letterPopover = popover
+        # the field is ready to type into straight away
+        try:
+            box.window().makeFirstResponder_(field)
+            field.selectText_(None)
+        except Exception:
+            pass
+        # the colour panel, if it is still open for a letter, now speaks for
+        # this one
+        panel = NSColorPanel.sharedColorPanel()
+        if getattr(self, "letterPanelLive", False) and panel.isVisible():
+            panel.setTarget_(box)
+            start = self.letterHexes.get(index)
+            self.letterPanelLive = False        # setColor_ must not paint it
+            panel.setColor_(nsColorFromHex(start) if start else self.w.fg.get())
+            self.letterPanelLive = True
+        else:
+            self.letterPanelLive = False
+
+    def letterColourPicked(self, code, typed=False):
+        """A swatch, or None for Ink: the letter the box is open for takes it.
+        typed: it came from the hex field, which is left as it is being
+        written."""
+        index = self.letterPick
+        if index is None:
+            return
+        if code is None:
+            self.letterHexes.pop(index, None)
+        else:
+            self.letterHexes[index] = code.upper()
+        box = getattr(self, "letterSwatches", None)
+        if box is not None:
+            box.current = self.letterHexes.get(index)
+            box.setNeedsDisplay_(True)
+            field = getattr(box, "field", None)
+            if field is not None and not typed:
+                field.setStringValue_((box.current or "").lstrip("#"))
+        self.settingsChanged()
+
+    def letterHexTyped(self, text, live):
+        """The hex field: six digits or three, # or not. Half a code is waited
+        for; an empty field is Ink. Return takes it and closes the box."""
+        raw = str(text or "").strip().lstrip("#")
+        if not raw:
+            self.letterColourPicked(None, typed=True)
+        else:
+            colour = nsColorFromHex(raw)
+            if colour is not None:
+                self.letterColourPicked(hexFromNSColor(colour).upper(), typed=True)
+        if not live and self.letterPopover is not None:
+            self.letterPopover.close()
+
+    def colourWellsActive(self):
+        for name in ("bg", "fg", "tintDark", "tintLight"):
+            well = getattr(self.w, name, None)
+            try:
+                if well is not None and well._nsObject.isActive():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def openLetterColourPanel(self):
+        """Any colour at all, from the system's colour panel, for the letter the
+        box is open for: it follows as the colour is moved."""
+        for name in ("bg", "fg", "tintDark", "tintLight"):
+            well = getattr(self.w, name, None)
+            try:
+                if well is not None:
+                    well._nsObject.deactivate()
+            except Exception:
+                pass
+        panel = NSColorPanel.sharedColorPanel()
+        start = self.letterHexes.get(self.letterPick)
+        panel.setColor_(nsColorFromHex(start) if start else self.w.fg.get())
+        panel.setTarget_(self.letterSwatches)
+        panel.setAction_("panelChanged:")
+        panel.setContinuous_(True)
+        self.letterPanelLive = True
+        panel.orderFront_(None)
+
+    def letterPanelChanged(self, panel):
+        # the panel is shared: once a colour well has it, its moves are the
+        # well's and not the letter's
+        if not getattr(self, "letterPanelLive", False) or self.colourWellsActive():
+            return
+        self.letterColourPicked(hexFromNSColor(panel.color()).upper())
+
+    def clearLetterColours(self):
+        """Every letter back in Ink."""
+        self.letterHexes = {}
+        box = getattr(self, "letterSwatches", None)
+        if box is not None:
+            box.current = None
+            box.setNeedsDisplay_(True)
+        self.settingsChanged()
+
     def hexEdited(self, sender=None):
         """
         Typed text moves the well. It never comes back the other way.
@@ -4443,11 +4881,29 @@ class KINOMAT(object):
         self.drawPreview()
         self.keepUp()
 
+    def filmRepeats(self):
+        """How many times the cycle runs in the MP4: Play once is one, whatever
+        the Repeat says."""
+        if MODES[self.w.mode.get()] == "Play once":
+            return 1
+        return int(self.clamped(self.w.loops, 3, 1, 20))
+
+    def filmSeconds(self):
+        """How long the MP4 will be: the frames it is made of, at its fps."""
+        return self.frameCount() * self.filmRepeats() / float(self.fps())
+
     def updateInfo(self):
-        ready = ("Ready · %.1f s × %d · %d fps"
-                 % (self.cfg["duration"],
-                    int(self.clamped(self.w.loops, 3, 1, 20)),
-                    self.cfg["fps"]))
+        # the length the MP4 will have, said where the Repeat is typed: the
+        # cycle alone and a count were left to multiply in one's head
+        total = self.filmSeconds()
+        once = MODES[self.w.mode.get()] == "Play once"
+        note = ("= %s s · Play once" if once else "= %s s in MP4") % (
+            ("%.2f" % total).rstrip("0").rstrip("."))
+        if hasattr(self.w, "loopsNote"):
+            self.w.loopsNote.set(note)
+        ready = ("Ready · MP4 %.1f s (%.1f s × %d) · %d fps"
+                 % (total, self.frameCount() / float(self.fps()),
+                    self.filmRepeats(), self.cfg["fps"]))
         # the missing variable export stays said: it is why the lanes are Size
         # and Tracking, and the timing note alone would hide it
         if getattr(self, "noVariableExport", False):
@@ -4990,10 +5446,7 @@ class KINOMAT(object):
         self.stopTimer()
         self.beginExport()
         try:
-            repeats = int(self.clamped(self.w.loops, 3, 1, 20))
-            once = MODES[self.w.mode.get()] == "Play once"
-            if once:
-                repeats = 1
+            repeats = self.filmRepeats()
             frames, cw, ch = self.filmFrames(repeats)
             codec = writeMP4(path,
                              self.trackedFrames(frames,
@@ -5350,6 +5803,9 @@ class KINOMAT(object):
                        int(round(self.num(self.w.canvasH, 1080)))],
             "paper": hexFromNSColor(self.w.bg.get()).upper(),
             "ink": hexFromNSColor(self.w.fg.get()).upper(),
+            # the letters' own colours, by where they stand in the text
+            "letters": {str(index): colour for index, colour in
+                        sorted(self.letterHexes.items())},
             "alternate": bool(self.alternateCheck.on),
             "lanes": lanes,
             # where it is: a project is settings, the file stays where it was
@@ -5638,6 +6094,20 @@ class KINOMAT(object):
 
         if isinstance(data.get("text"), str):
             self.w.text.set(data["text"])
+            # the letters' own colours belong to this text: they are read with
+            # it, and the text they were counted on is this one
+            self.letterHexes = {}
+            letters = data.get("letters")
+            if isinstance(letters, dict):
+                for key, colour in letters.items():
+                    try:
+                        index = int(key)
+                    except (TypeError, ValueError):
+                        continue
+                    if isinstance(colour, str) and nsColorFromHex(colour) is not None:
+                        self.letterHexes[index] = hexFromNSColor(
+                            nsColorFromHex(colour)).upper()
+            self.lastLetterText = (data["text"] or " ").replace("\\n", "\n")
         number("size", "size")
         tick("fit", self.fitCheck)
         number("leading", "lead")
@@ -5788,6 +6258,17 @@ class KINOMAT(object):
             return
         self.closed = True
         self.rememberLast()
+        # the swatch box and the colour panel let go of this panel's letters
+        if self.letterPopover is not None:
+            self.letterPopover.close()
+        try:
+            panel = NSColorPanel.sharedColorPanel()
+            if panel.target() in _SWATCH_VIEWS:
+                panel.setTarget_(None)
+                panel.setAction_(None)
+        except Exception:
+            pass
+        self.letterPanelLive = False
         if self in OPEN_PANELS:
             OPEN_PANELS.remove(self)
         self.stopTimer()
