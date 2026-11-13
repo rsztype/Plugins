@@ -2690,6 +2690,8 @@ class KINOMAT(object):
     staticOf = None             # the master a static font is of
     widenTimer = None
     switchTimer = None          # the change of variable setting about to run
+    keepTimer = None            # the settings written down as the panel is used
+    keptText = None             # what was written down last, to write only changes
     openAt = None               # the corner a window built again opens at
     wholeTried = False          # Cycle's whole-font export was made, whole or not
     stuck = False               # an export for new letters failed: no more
@@ -3748,6 +3750,7 @@ class KINOMAT(object):
             self.restoreLast()
             if self not in OPEN_PANELS:
                 OPEN_PANELS.append(self)
+            self.startKeeping()
         # it opens running: the panel is about the movement, and asking for it
         # every time was a click that never had a reason not to happen
         self.togglePlay()
@@ -6228,9 +6231,41 @@ class KINOMAT(object):
         project would hold, so the next window opens where this one was left."""
         try:
             import json
-            Glyphs.defaults[LAST_DEFAULT] = json.dumps(self.projectData(), ensure_ascii=False)
+            data = self.projectData()
+            # the moment it was written is not a setting: two writes of the
+            # same panel are the same text without it
+            same = dict(data)
+            same.pop("saved", None)
+            text = json.dumps(same, ensure_ascii=False, sort_keys=True)
+            if text == self.keptText:
+                return
+            Glyphs.defaults[LAST_DEFAULT] = json.dumps(data, ensure_ascii=False)
+            self.keptText = text
         except Exception as trouble:
             print("Kinomat — settings not remembered: %s" % trouble)
+
+    def startKeeping(self):
+        """
+        The settings written down while the panel is used, not only when it
+        closes: a second of quiet after a change and they are in Glyphs'
+        preferences. Waiting for the close lost them whenever the window went
+        some other way than its own close button — another panel opened on top
+        of it, Glyphs quitting without a word — and the next panel opened on
+        the Duration and Repeat of the time before.
+        """
+        self.stopKeeping()
+        self.keepTimer = NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+            1.0, True, lambda timer: self.keepNow())
+
+    def keepNow(self):
+        if self.closed or getattr(self, "rebuilding", False) or self.exporting:
+            return
+        self.rememberLast()
+
+    def stopKeeping(self):
+        if self.keepTimer is not None:
+            self.keepTimer.invalidate()
+            self.keepTimer = None
 
     def restoreLast(self):
         """The settings the last window was closed with, back into this one.
@@ -6257,6 +6292,7 @@ class KINOMAT(object):
         if getattr(self, "rebuilding", False):
             return
         self.closed = True
+        self.stopKeeping()
         self.rememberLast()
         # the swatch box and the colour panel let go of this panel's letters
         if self.letterPopover is not None:
