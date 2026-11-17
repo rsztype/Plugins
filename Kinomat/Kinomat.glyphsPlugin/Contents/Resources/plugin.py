@@ -226,6 +226,86 @@ def unitProgress(progress, index, count, spread=0.6):
     return (progress - spread * (index / float(count))) % 1.0
 
 
+# Instances: how long the film stands on each instance, and the least a move
+# from one to the next may take. With many instances the cycle grows to make
+# room for them rather than squeezing the pauses out of sight.
+HOLD_SECONDS = 0.4
+MOVE_SECONDS = 0.25
+HOLD = 0.5              # the share of a stretch spent standing, when not given
+
+# Cycle: every glyph is on screen for the same time, at least CYCLE_SECONDS,
+# as in the Kinomat on the web. A long list lengthens the cycle, up to
+# CYCLE_MAX_SECONDS; past that the glyphs share it out evenly.
+CYCLE_SECONDS = 0.3
+CYCLE_MAX_SECONDS = 18.0
+
+
+def instanceStops(baseFont):
+    """
+    {axis id: [values]} — where the font's named instances stand on each axis.
+
+    Read from the fvar table of the compiled font, in the same user values the
+    lanes move in: Light, Regular, Bold… as Font Info exports them, with the
+    axis locations already applied.
+    """
+    stops = {}
+    try:
+        data = CoreText.CTFontCopyTable(baseFont, struct.unpack(">I", b"fvar")[0], 0)
+        if data is None:
+            return stops
+        raw = bytes(data)
+        (major, minor, axesAt, _, axisCount, axisSize,
+         count, size) = struct.unpack(">8H", raw[:16])
+        tags = [struct.unpack(">I", raw[axesAt + k * axisSize:axesAt + k * axisSize + 4])[0]
+                for k in range(axisCount)]
+        at = axesAt + axisCount * axisSize
+        for n in range(count):
+            record = raw[at + n * size:at + n * size + 4 + 4 * axisCount]
+            coords = struct.unpack(">%di" % axisCount, record[4:])
+            for tag, value in zip(tags, coords):
+                stops.setdefault(tag, set()).add(round(value / 65536.0, 3))
+    except Exception as trouble:
+        print("Kinomat \u2014 instances not read: %s" % trouble)
+        return {}
+    return dict((tag, sorted(values)) for tag, values in stops.items())
+
+
+def stopPath(a, b, stops):
+    """The values the way from a to b stands still on: both ends and every
+    instance between them, in the order they are met."""
+    low, high = min(a, b), max(a, b)
+    inner = sorted((v for v in stops if low + 1e-6 < v < high - 1e-6),
+                   reverse=b < a)
+    return [a] + inner + [b]
+
+
+def stopping(share, a, b, stops, ease, hold=HOLD):
+    """
+    The value at that share (0..1, linear) of the way from a to b, standing a
+    while on every instance on the way and on both ends.
+
+    The way is cut into equal stretches, one from each instance to the next;
+    each starts and ends standing still (hold of it in all) and moves eased in
+    between, so the easing is the one asked for, given to every move.
+    """
+    if a == b:
+        return a
+    path = stopPath(a, b, stops)
+    n = len(path) - 1
+    share = min(1.0, max(0.0, share))
+    k = min(n - 1, int(share * n))
+    u = share * n - k
+    hold = min(0.9, max(0.0, hold))
+    half = hold / 2.0
+    if u <= half:
+        t = 0.0
+    elif u >= 1.0 - half:
+        t = 1.0
+    else:
+        t = ease((u - half) / (1.0 - hold))
+    return path[k] + (path[k + 1] - path[k]) * t
+
+
 def phaseToProgress(phase, mode, easeIndex):
     """phase 0..1 over the cycle -> 0..1 value used to interpolate the axes."""
     if mode == "Ping-pong":
@@ -639,14 +719,18 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
                 bgColor, fgColor, align, unit="Whole", track=0.0, sliders=None,
                 backdrop=None, zoom=1.0, turn=0.0, bright=0.0, contrast=0.0,
                 ink=None, features=None, textTurn=0.0, outlines=False,
-                letterColours=None, starts=None, hits=None):
+                letterColours=None, starts=None, hits=None, ghosts=None,
+                opacity=1.0):
     """A frame of the film, as a CGImage.
 
     letterColours: the letters with a colour of their own, as CGColors keyed
     by where they stand in the text; starts: where each line starts in it.
     hits, a list, is filled with where each letter landed — its place in the
     text and its box, before the text's rotation — so a click on the stage
-    can find the letter under it."""
+    can find the letter under it.
+
+    ghosts: the Onion skin, a list of (progress, lines, alpha) drawn under the
+    frame, oldest first. opacity: the text's own, 0 to 1, ghosts included."""
     cs = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
     ctx = Quartz.CGBitmapContextCreate(None, int(w), int(h), 8, 0, cs,
                                        Quartz.kCGImageAlphaPremultipliedLast)
@@ -657,128 +741,161 @@ def renderFrame(baseFont, w, h, lines, size, leadPct, variationsAt, progress,
     Quartz.CGContextFillRect(ctx, ((0, 0), (w, h)))
     if backdrop is not None:
         drawCover(ctx, w, h, backdrop, zoom, turn, bright, contrast)
-    # A static font's Size lane grows a whole line from its middle, so the
-    # block is measured at the size it has now. Pieces grow from the line they
-    # stand on instead, and the block keeps its place while they do.
-    grown, _, whole = laneShares(variationsAt(progress), track)
-    body = size * (grown if unit == "Whole" else 1.0)
-    capH = CoreText.CTFontGetCapHeight(
-        variedFont(baseFont, body, whole, features))
-    lead = body * leadPct / 100.0
-    # The block is centred on what shows of it: from the caps — or the accents
-    # and ascenders, where they stand higher — of the first line down to the
-    # descenders of the last. Counted on the caps alone, the descenders hung
-    # below the middle and a square frame cut them off. `ink` is how far the
-    # ink reaches, per em, the most it does over the whole cycle, so the block
-    # doesn't bob as the axes move. An overshoot's worth of it is let out, as
-    # it always was: a round letter stays as big as a flat one.
-    rise, fall = capH, 0.0
-    if ink:
-        spill = capH * OVERSHOOT
-        rise = max(capH, ink[0] * body - spill)
-        fall = max(0.0, ink[1] * body - spill)
-    blockH = rise + lead * (len(lines) - 1) + fall
-    top = (h + blockH) / 2.0
-    margin = w * 0.05
 
-    # The pieces are numbered across the whole block, not from the start of
-    # each line. Numbered per line, three lines of one word each were three
-    # pieces all numbered 0, so all three sat at the same point of the cycle
-    # and Words looked exactly like Whole.
-    blocks = [splitUnits(txt, unit) for txt in lines]
-    pieceCount = sum(len(b) for b in blocks) or 1
-    firstOf, counted = [], 0
-    for block in blocks:
-        firstOf.append(counted)
-        counted += len(block)
+    def drawText(progress, lines, hits, letterColours, starts):
+        """The text at that point of the cycle: the frame itself, or one of
+        its ghosts."""
+        # A static font's Size lane grows a whole line from its middle, so the
+        # block is measured at the size it has now. Pieces grow from the line they
+        # stand on instead, and the block keeps its place while they do.
+        grown, _, whole = laneShares(variationsAt(progress), track)
+        body = size * (grown if unit == "Whole" else 1.0)
+        capH = CoreText.CTFontGetCapHeight(
+            variedFont(baseFont, body, whole, features))
+        lead = body * leadPct / 100.0
+        # The block is centred on what shows of it: from the caps — or the accents
+        # and ascenders, where they stand higher — of the first line down to the
+        # descenders of the last. Counted on the caps alone, the descenders hung
+        # below the middle and a square frame cut them off. `ink` is how far the
+        # ink reaches, per em, the most it does over the whole cycle, so the block
+        # doesn't bob as the axes move. An overshoot's worth of it is let out, as
+        # it always was: a round letter stays as big as a flat one.
+        rise, fall = capH, 0.0
+        if ink:
+            spill = capH * OVERSHOOT
+            rise = max(capH, ink[0] * body - spill)
+            fall = max(0.0, ink[1] * body - spill)
+        blockH = rise + lead * (len(lines) - 1) + fall
+        top = (h + blockH) / 2.0
+        margin = w * 0.05
 
-    # The TEXT section's Rotate turns the text block about the middle of the frame,
-    # clockwise for a positive angle. The sliders are drawn after, upright.
-    # The angle is the Rotate field of the TEXT section.
-    angle = float(textTurn or 0.0)
-    if angle:
-        Quartz.CGContextSaveGState(ctx)
-        Quartz.CGContextTranslateCTM(ctx, w / 2.0, h / 2.0)
-        Quartz.CGContextRotateCTM(ctx, -math.radians(angle))
-        Quartz.CGContextTranslateCTM(ctx, -w / 2.0, -h / 2.0)
+        # The pieces are numbered across the whole block, not from the start of
+        # each line. Numbered per line, three lines of one word each were three
+        # pieces all numbered 0, so all three sat at the same point of the cycle
+        # and Words looked exactly like Whole.
+        blocks = [splitUnits(txt, unit) for txt in lines]
+        pieceCount = sum(len(b) for b in blocks) or 1
+        firstOf, counted = [], 0
+        for block in blocks:
+            firstOf.append(counted)
+            counted += len(block)
+        # Whole is the block as one piece: every line at the same point of the
+        # cycle. Counted as a piece per line, the lines set off one after another,
+        # each later than the one above it — Words and Letters do that, Whole not.
+        if unit == "Whole":
+            pieceCount, firstOf = 1, [0] * len(blocks)
 
-    # Outlines only: the letters are stroked and not filled. A hairline of the
-    # frame, in the text colour; a fraction of the short side so a small frame
-    # and a large export carry the same line.
-    if outlines:
-        Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextStroke)
-        Quartz.CGContextSetStrokeColorWithColor(ctx, fgColor)
-        Quartz.CGContextSetLineWidth(ctx, max(1.0, min(w, h) * 0.003))
+        # The TEXT section's Rotate turns the text block about the middle of the frame,
+        # clockwise for a positive angle. The sliders are drawn after, upright.
+        # The angle is the Rotate field of the TEXT section.
+        angle = float(textTurn or 0.0)
+        if angle:
+            Quartz.CGContextSaveGState(ctx)
+            Quartz.CGContextTranslateCTM(ctx, w / 2.0, h / 2.0)
+            Quartz.CGContextRotateCTM(ctx, -math.radians(angle))
+            Quartz.CGContextTranslateCTM(ctx, -w / 2.0, -h / 2.0)
 
-    if starts is None or len(starts) < len(lines):
-        letterColours = None        # no way to tell which letter is which
-    for i, txt in enumerate(lines):
-        pieces = blocks[i]
-        # each piece gets its own font at its own point in the cycle, and is
-        # laid out after the one before. Whole is a single piece, so it draws
-        # exactly as it always did.
-        drawn = []
-        total = 0.0
-        kern = 0.0
-        base = starts[i] if starts is not None and i < len(starts) else 0
-        for k, piece in enumerate(pieces):
-            scale, tracked, variations = laneShares(
-                variationsAt(unitProgress(progress, firstOf[i] + k,
-                                          pieceCount)), track)
-            # tracking is written per thousand of the em, the way a type
-            # designer says it; CoreText wants points
-            kern = size * scale * tracked / 1000.0
-            line = _line(piece,
-                         variedFont(baseFont, size * scale, variations,
-                                    features),
-                         fgColor, kern, letterColours, base)
-            wid = CoreText.CTLineGetTypographicBounds(line, None, None, None)[0]
-            drawn.append((line, wid, piece, base))
-            base += len(piece)
-            total += wid
-        total -= kern           # the space after the last glyph of the line
+        # Outlines only: the letters are stroked and not filled. A hairline of the
+        # frame, in the text colour; a fraction of the short side so a small frame
+        # and a large export carry the same line.
+        if outlines:
+            Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextStroke)
+            Quartz.CGContextSetStrokeColorWithColor(ctx, fgColor)
+            Quartz.CGContextSetLineWidth(ctx, max(1.0, min(w, h) * 0.003))
 
-        y = top - rise - i * lead
-        if align == "Left":
-            x = margin
-        elif align == "Right":
-            x = w - margin - total
-        else:
-            x = (w - total) / 2.0
-        for line, wid, piece, first in drawn:
-            if hits is not None and starts is not None:
-                # each letter's box: across, from where it starts in the line
-                # to where the next one does; up, the line's own ascent and
-                # descent
-                _, up, down, _ = CoreText.CTLineGetTypographicBounds(
-                    line, None, None, None)
-                at = 0
-                for j, ch in enumerate(piece):
-                    units = len(ch.encode("utf-16-le")) // 2
-                    if not ch.isspace():
-                        x0 = CoreText.CTLineGetOffsetForStringIndex(line, at, None)[0]
-                        x1 = CoreText.CTLineGetOffsetForStringIndex(line, at + units, None)[0]
-                        hits.append((first + j, x + min(x0, x1), x + max(x0, x1),
-                                     y - down, y + up))
-                    at += units
-            Quartz.CGContextSetTextPosition(ctx, x, y)
-            if outlines and letterColours:
-                # CoreText fills in each letter's colour but strokes in the
-                # context's: drawn a run at a time, the stroke is set to the
-                # run's own colour first
-                for run in CoreText.CTLineGetGlyphRuns(line):
-                    colour = CoreText.CTRunGetAttributes(run).get(
-                        CoreText.kCTForegroundColorAttributeName)
-                    Quartz.CGContextSetStrokeColorWithColor(ctx, colour or fgColor)
-                    CoreText.CTRunDraw(run, ctx, (0, 0))
+        if starts is None or len(starts) < len(lines):
+            letterColours = None        # no way to tell which letter is which
+        for i, txt in enumerate(lines):
+            pieces = blocks[i]
+            # each piece gets its own font at its own point in the cycle, and is
+            # laid out after the one before. Whole is a single piece, so it draws
+            # exactly as it always did.
+            drawn = []
+            total = 0.0
+            kern = 0.0
+            base = starts[i] if starts is not None and i < len(starts) else 0
+            for k, piece in enumerate(pieces):
+                scale, tracked, variations = laneShares(
+                    variationsAt(unitProgress(progress, firstOf[i] + k,
+                                              pieceCount)), track)
+                # tracking is written per thousand of the em, the way a type
+                # designer says it; CoreText wants points
+                kern = size * scale * tracked / 1000.0
+                line = _line(piece,
+                             variedFont(baseFont, size * scale, variations,
+                                        features),
+                             fgColor, kern, letterColours, base)
+                wid = CoreText.CTLineGetTypographicBounds(line, None, None, None)[0]
+                drawn.append((line, wid, piece, base))
+                base += len(piece)
+                total += wid
+            total -= kern           # the space after the last glyph of the line
+
+            y = top - rise - i * lead
+            if align == "Left":
+                x = margin
+            elif align == "Right":
+                x = w - margin - total
             else:
-                CoreText.CTLineDraw(line, ctx)
-            x += wid
+                x = (w - total) / 2.0
+            for line, wid, piece, first in drawn:
+                if hits is not None and starts is not None:
+                    # each letter's box: across, from where it starts in the line
+                    # to where the next one does; up, the line's own ascent and
+                    # descent
+                    _, up, down, _ = CoreText.CTLineGetTypographicBounds(
+                        line, None, None, None)
+                    at = 0
+                    for j, ch in enumerate(piece):
+                        units = len(ch.encode("utf-16-le")) // 2
+                        if not ch.isspace():
+                            x0 = CoreText.CTLineGetOffsetForStringIndex(line, at, None)[0]
+                            x1 = CoreText.CTLineGetOffsetForStringIndex(line, at + units, None)[0]
+                            hits.append((first + j, x + min(x0, x1), x + max(x0, x1),
+                                         y - down, y + up))
+                        at += units
+                Quartz.CGContextSetTextPosition(ctx, x, y)
+                if outlines and letterColours:
+                    # CoreText fills in each letter's colour but strokes in the
+                    # context's: drawn a run at a time, the stroke is set to the
+                    # run's own colour first
+                    for run in CoreText.CTLineGetGlyphRuns(line):
+                        colour = CoreText.CTRunGetAttributes(run).get(
+                            CoreText.kCTForegroundColorAttributeName)
+                        Quartz.CGContextSetStrokeColorWithColor(ctx, colour or fgColor)
+                        CoreText.CTRunDraw(run, ctx, (0, 0))
+                else:
+                    CoreText.CTLineDraw(line, ctx)
+                x += wid
 
-    if outlines:
-        Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextFill)
-    if angle:
+        if outlines:
+            Quartz.CGContextSetTextDrawingMode(ctx, Quartz.kCGTextFill)
+        if angle:
+            Quartz.CGContextRestoreGState(ctx)
+
+    # Onion skin: the frames just gone by, drawn first and fainter the
+    # further back they are, so the text leaves a trail of itself behind. A
+    # ghost is the text drawn whole at its own moment, with the context's
+    # alpha turned down; it is never where a click lands.
+    opacity = min(1.0, max(0.0, float(opacity)))
+    for ghostAt, ghostLines, alpha in (ghosts or ()):
+        Quartz.CGContextSaveGState(ctx)
+        Quartz.CGContextSetAlpha(ctx, alpha * opacity)
+        drawText(ghostAt, ghostLines, None, letterColours,
+                 starts if ghostLines is lines else None)
         Quartz.CGContextRestoreGState(ctx)
+    # Opacity: the text see-through as one piece. Drawn into a layer of its
+    # own and laid down at that alpha, so where two letters overlap — a tight
+    # tracking, a script's joins — they don't show darker than the rest.
+    if opacity < 1.0:
+        Quartz.CGContextSaveGState(ctx)
+        Quartz.CGContextSetAlpha(ctx, opacity)
+        Quartz.CGContextBeginTransparencyLayer(ctx, None)
+        drawText(progress, lines, hits, letterColours, starts)
+        Quartz.CGContextEndTransparencyLayer(ctx)
+        Quartz.CGContextRestoreGState(ctx)
+    else:
+        drawText(progress, lines, hits, letterColours, starts)
 
     drawSliders(ctx, w, h, sliders, fgColor)
     return Quartz.CGBitmapContextCreateImage(ctx)
@@ -1687,6 +1804,24 @@ def pinToMaster(instance, master):
 # only the glyphs the film needs
 # ----------------------------------------------------------------------------
 
+def rememberedLetters():
+    """The letters of the text the last panel was left with, as restoreLast
+    will put it back: none when there is none, or it cannot be read."""
+    try:
+        import json, re
+        text = Glyphs.defaults.get(LAST_DEFAULT) or ""
+        data = json.loads(text) if text else None
+        typed = data.get("text") if isinstance(data, dict) else None
+        if not isinstance(typed, str):
+            return frozenset()
+        typed = typed.replace("\\n", "\n")
+        # a glyph named /like this stands for itself, not for its letters
+        typed = re.sub(r"/[^ \t\n/]+ ?", "", typed)
+        return frozenset(letter for letter in typed if not letter.isspace())
+    except Exception:
+        return frozenset()
+
+
 def openingText(font):
     """What the box says when the panel opens: the font's own name, which is
     what you want to look at first."""
@@ -2144,6 +2279,8 @@ COL_W = 249                          # one column of settings
 SIDE_W = COL_W * 2                   # the two of them, side by side
 GUTTER = 16                          # a column's own padding
 LABEL_W = 56                         # the right-aligned label column
+ONION_STEP = 0.1                     # Onion skin: seconds between two ghosts
+ONION_ALPHA = 0.5                    # the ghost nearest the frame; the rest fade to nothing
 FIELD_X = GUTTER + LABEL_W + 10
 FIELD_W = COL_W - GUTTER - FIELD_X
 ZONE_PAD = 18                        # left and right of the lanes and the bar
@@ -2155,7 +2292,7 @@ PROGRESS_W = 340
 SIDE_H = 557                         # the taller column, CANVAS, with its
                                      # margin: the settings never have less
                                      # room than this
-MOTION_H = 185                       # MOTION, in the left column beside the
+MOTION_H = 213                       # MOTION, in the left column beside the
                                      # lanes: the band is never shorter
 WIN_RATIO = 16.0 / 9.0
 WIN_MAX_W = 1440                     # on a large screen it stops growing here
@@ -2763,6 +2900,10 @@ class KINOMAT(object):
         # only what a film of the box needs goes out, and the box opens on the
         # font's name: a few dozen glyphs instead of the whole font
         self.letters = frozenset(openingText(self.font))
+        # 1.00: the panel then opens on the text it was left with (restoreLast),
+        # and its letters went out in a second export straight after the
+        # first. They go out together now, in one.
+        self.letters = self.letters | rememberedLetters()
         needed = neededGlyphs(self.font, self.letters)
         try:
             # an export still there — another panel open on the same document,
@@ -3121,6 +3262,9 @@ class KINOMAT(object):
         self.animate = [bool(ax.get("animate", True)) for ax in self.axes]
         # Hide leaves a lane's slider out of the frame; the lane still moves
         self.hidden = [bool(ax.get("hide", False)) for ax in self.axes]
+        # Reverse (the ⇄ before From → To): the lane runs from its To back to
+        # its From, in every Loop, Alternate, Random and Cycle alike
+        self.reversed = [bool(ax.get("reverse", False)) for ax in self.axes]
 
         self.colOff = 0
         stageX = SIDE_W + 1
@@ -3246,45 +3390,48 @@ class KINOMAT(object):
                                    True, self.settingsChanged)
         y += FIELD_H + 8
 
+        # Leading and Tracking share a row, and Rotate shares one with Align:
+        # ten rows were more than the column had room for, and Opacity ran
+        # into MOTION (1.08)
         self.rowLabel("lbLead", y, "Leading")
-        self.field("lead", FIELD_X, y, 66, "110")
-        self.caption("leadPct", FIELD_X + 72, y + 4, 16, "%", INK_MUTED, 11)
-        y += FIELD_H + 8
-
-        self.rowLabel("lbTrack", y, "Tracking")
-        self.field("track", FIELD_X, y, 66, "0")
-        self.caption("trackUnit", FIELD_X + 72, y + 4, 44, "/1000",
-                     INK_MUTED, 11)
-        # Sliders used to stand here; it draws the lanes' own sliders in the
-        # frame, so it stands with the lanes now
-        y += FIELD_H + 8
-
-        self.rowLabel("lbRotate", y, "Rotate")
-        self.field("textTurn", FIELD_X, y, 66, "0")
-        self.caption("textTurnUnit", FIELD_X + 72, y + 4, 16, "\u00b0",
-                     INK_MUTED, 11)
+        self.field("lead", FIELD_X, y, 50, "110")
+        self.caption("leadPct", FIELD_X + 54, y + 4, 10, "%", INK_MUTED, 11)
+        self.caption("lbTrack", FIELD_X + 64, y + 4, 40, "Track", INK_LABEL,
+                     align=NSTextAlignmentRight)
+        self.field("track", FIELD_X + FIELD_W - 44, y, 44, "0")
+        try:
+            self.w.track.getNSTextField().setToolTip_(
+                "Tracking, in thousandths of the em")
+        except Exception:
+            pass
         y += FIELD_H + 8
 
         # AppKit gives a segmented control the accent set in System Settings
         # and no way to ask for another, so the track and its three buttons are
         # drawn here instead
-        self.rowLabel("lbAlign", y - 1, "Align")
-        self.zone("alignTrack", (FIELD_X, y, 98, 26), SURF_SEGMENT)
+        self.rowLabel("lbRotate", y, "Rotate")
+        self.field("textTurn", FIELD_X, y, 44, "0")
+        self.caption("textTurnUnit", FIELD_X + 48, y + 4, 12, "\u00b0",
+                     INK_MUTED, 11)
+        alignX = FIELD_X + FIELD_W - 86
+        self.zone("alignTrack", (alignX, y - 1, 86, 26), SURF_SEGMENT)
         self.w.alignTrack.getNSView().layer().setCornerRadius_(7.0)
         self.alignButtons = []
         for i, icon in enumerate(("text.alignleft", "text.aligncenter",
                                   "text.alignright")):
-            self.pill("align%d" % i, FIELD_X + 2 + i * 32, y + 2, 30, 22, "",
+            self.pill("align%d" % i, alignX + 2 + i * 28, y + 1, 26, 22, "",
                       lambda sender, k=i: self.pickAlign(k), radius=5)
             control = getattr(self.w, "align%d" % i)
             image = symbol(icon)
             if image is not None:
                 control.getNSButton().setImage_(image)
                 control.getNSButton().setImagePosition_(NSImageOnly)
+            control.getNSButton().setToolTip_(("Align left", "Centre",
+                                               "Align right")[i])
             self.alignButtons.append(control)
         self.alignIndex = 1
         self.paintAlign()
-        y += 26 + 8
+        y += FIELD_H + 8
 
         # the ligatures the word is set with. liga is on, as CoreText has it
         # and as the font asks; dlig is off, because a discretionary ligature
@@ -3306,17 +3453,35 @@ class KINOMAT(object):
                 pass
         y += FIELD_H + 8
 
-        # the text drawn as outlines only: the name, then the box
+        # the text drawn as outlines only: the name, then the box. Cycle stood
+        # beside it; it is the first row of MOTION now (1.09)
         self.rowLabel("lbOutlines", y, "Outlines")
         self.outlineCheck = self.check("outlineBox", FIELD_X, y, 24, "", False,
                                        self.settingsChanged)
+        try:
+            self.outlineCheck.setToolTip_("The letters drawn as outlines only, in Ink.")
+        except Exception:
+            pass
         y += FIELD_H + 8
 
-        # Cycle: every glyph of the font, one after another
-        self.rowLabel("lbCycle", y, "Cycle")
-        self.cycleCheck = self.check("cycleBox", FIELD_X, y, 24, "", False,
+        # Onion skin: the frames just gone by stay behind the text, fainter the
+        # further back they are. The box turns it on, the field says how many.
+        self.rowLabel("lbOnion", y, "Onion")
+        self.onionCheck = self.check("onionTick", FIELD_X, y, 24, "", False,
                                      self.settingsChanged)
+        self.field("onion", FIELD_X + 32, y, 44, "4")
+        self.caption("onionUnit", FIELD_X + 82, y + 4, 60, "ghosts",
+                     INK_MUTED, 11)
+        for control in (self.onionCheck, self.w.onion.getNSTextField()):
+            try:
+                control.setToolTip_("Onion skin: the frames just gone by stay "
+                                    "behind the text as fading ghosts, one "
+                                    "every %g s. In the preview and in every "
+                                    "export." % ONION_STEP)
+            except Exception:
+                pass
         y += FIELD_H
+        self.textBottom = y
 
         # MOTION used to stand here, between TEXT and CANVAS. It is down with
         # the lanes now: what moves and how, read on one line
@@ -3356,6 +3521,20 @@ class KINOMAT(object):
             self.field(target + "Hex", FIELD_X + 34, y, 72, colour,
                        callback=self.hexEdited, align=NSTextAlignmentLeft)
             y += FIELD_H + 8
+
+        # Opacity: how much of the Ink shows, 100 solid, 0 gone — under Ink,
+        # because it is the Ink's (1.08; it stood in TEXT). The ghosts of the
+        # Onion skin take it on top of their own fading.
+        self.rowLabel("lbOpacity", y, "Opacity")
+        self.field("opacity", FIELD_X + 34, y, 50, "100")
+        self.caption("opacityPct", FIELD_X + 88, y + 4, 16, "%", INK_MUTED, 11)
+        try:
+            self.w.opacity.getNSTextField().setToolTip_(
+                "The Ink's opacity, 0 to 100: the Stage or the background "
+                "shows through the letters. In the preview and in every export.")
+        except Exception:
+            pass
+        y += FIELD_H + 8
 
         # one button for the two rows, so it stands between them rather than
         # beside either one: it belongs to the pair, not to Paper or to Ink
@@ -3571,6 +3750,22 @@ class KINOMAT(object):
         # what moves and how, standing next to the lanes it drives
         y = self.sectionTitle("hdMotion", GUTTER,
                               self.divider("divMotion", laneY) + 6, "MOTION")
+        # Cycle: every glyph of the font, or of the box, one after another — the
+        # first thing MOTION asks, since it decides how long the cycle runs
+        self.rowLabel("lbCycle", y, "Cycle")
+        self.cycleCheck = self.check("cycleBox", FIELD_X, y, 24, "", False,
+                                     self.settingsChanged)
+        self.caption("cycleNote", FIELD_X + 30, y + 4, FIELD_W - 30,
+                     "one glyph at a time", INK_MUTED, 11)
+        try:
+            self.cycleCheck.setToolTip_(
+                "One glyph at a time: what is typed, or the whole font when the "
+                "box is empty. Each glyph stays %g s; a long list makes the "
+                "cycle longer." % CYCLE_SECONDS)
+        except Exception:
+            pass
+        y += FIELD_H + 4
+
         self.rowLabel("lbDuration", y, "Duration")
         self.field("duration", FIELD_X, y, 60, "2")
         self.caption("durUnit", FIELD_X + 66, y + 4, 12, "s", INK_MUTED, 11)
@@ -3618,14 +3813,21 @@ class KINOMAT(object):
                                          "Alternate", False, self.toggleAlternate)
         self.randomCheck = self.check("randomBox", boxX + 90, laneY + 40, 78,
                                       "Random", False, self.toggleRandom)
-        self.sliderCheck = self.check("sliderBox", boxX + 174, laneY + 40, 74,
-                                      "Sliders", False, self.settingsChanged)
+        self.sliderCheck = self.check("sliderBox", boxX + 174, laneY + 40, 112,
+                                      "Show Sliders", False, self.settingsChanged)
+        # Instances: the axes stop a while on Regular, Bold… on the way
+        self.instancesCheck = self.check("instancesBox", boxX + 292, laneY + 40, 90,
+                                         "Instances", False, self.settingsChanged)
+        if self.static:
+            self.w.instancesBox.show(False)
 
         liveX = laneR - 52
         toX = liveX - 68
         arrowX = toX - 15
         fromX = arrowX - 61
-        maxX = fromX - 46
+        # the ⇄ that turns the lane round stands just before its From → To
+        revX = fromX - 32
+        maxX = revX - 40
         # beside each lane's name, its Hide box; the minimum and the range move
         # along to make room for it
         hideX = laneX + 86
@@ -3660,6 +3862,11 @@ class KINOMAT(object):
             self.caption("axMax%d" % i, maxX, y + 8, 34,
                          "%g%s" % (ax["max"], unit),
                          INK_FAINT, 10, align=NSTextAlignmentRight)
+            rev = self.pill("axRev%d" % i, revX, y + 4, 26, 22, "\u21c4",
+                            lambda sender, k=i: self.toggleReverse(k),
+                            **self.reverseLook(self.reversed[i]))
+            rev.getNSButton().setToolTip_(
+                "Reverse: this lane runs from its To back to its From.")
             self.field("axFrom%d" % i, fromX, y + 4, 56,
                        "%g" % ax.get("from", ax["min"]), size=11, height=22)
             self.caption("axArrow%d" % i, arrowX - 2, y + 7, 14, "→",
@@ -4002,8 +4209,14 @@ class KINOMAT(object):
             a = min(max(a, ax["min"]), ax["max"])
             b = min(max(b, ax["min"]), ax["max"])
             raw.append((a, b))
-            # ◈ off: the axis sits still on its From value
-            ranges.append((ax["id"], a, b if self.animate[i] else a))
+            # ◈ off: the axis sits still on its From value; Reverse sets off
+            # from the To and arrives at the From
+            if not self.animate[i]:
+                ranges.append((ax["id"], a, a))
+            elif self.reversed[i]:
+                ranges.append((ax["id"], b, a))
+            else:
+                ranges.append((ax["id"], a, b))
         # the letters' own colours follow the text as it is edited: a letter
         # keeps its colour when something is typed before it
         full = (self.w.text.get() or " ").replace("\\n", "\n")
@@ -4027,6 +4240,7 @@ class KINOMAT(object):
             "track": self.clamped(self.w.track, 0, -300, 1000),
             "textTurn": self.clamped(self.w.textTurn, 0, -180, 180),
             "outlines": bool(self.outlineCheck.on),
+            "opacity": self.clamped(self.w.opacity, 100, 0, 100) / 100.0,
             "align": ALIGNMENTS[self.alignIndex],
             # clig goes with liga: a contextual ligature is a ligature, and
             # nobody wants two tick boxes to say one thing
@@ -4060,11 +4274,36 @@ class KINOMAT(object):
         if len(self.offsets) != len(self.axes):
             self.rollOffsets()
         self.cfg["random"] = bool(self.randomCheck.on) and not self.cfg["alternate"]
-        self.cfg["offsets"] = list(self.offsets)
+        # Instances: the moving axes stop on the font's instances on the way
+        self.cfg["stops"] = {}
+        if self.instancesCheck.on and not self.static:
+            if getattr(self, "stopsOf", None) is not self.baseFont:
+                self.stopsOf = self.baseFont
+                self.fontStops = instanceStops(self.baseFont)
+            for i in self.cfg["moving"]:
+                ident = self.axes[i]["id"]
+                if isinstance(ident, int) and self.fontStops.get(ident):
+                    self.cfg["stops"][i] = self.fontStops[ident]
+        # Cycle's frames first: how many there are sets how long the cycle runs
         self.cfg["frames"] = self.cycleFrames() if self.cycleCheck.on else None
+        self.timeStops()
+        # Onion skin: how many ghosts, and how far apart in the cycle — a whole
+        # number of the film's frames, so the export draws them on frames it has
+        self.cfg["onion"] = (int(self.clamped(self.w.onion, 4, 1, 12))
+                             if self.onionCheck.on else 0)
+        self.cfg["onionGap"] = (max(1, int(round(self.cfg["fps"] * ONION_STEP)))
+                                / float(self.frameCount()))
+        self.cfg["offsets"] = list(self.offsets)
         # the fit is 9 layouts: compute it here, never inside the loop — and the
         # reach of the ink with it, which places the block in every frame
-        block = self.measureBlock()
+        # measured again only when something it depends on has changed: with
+        # Cycle it is every glyph of the run, hundreds of layouts, and it was
+        # being redone once a second while the film played (1.09)
+        key = self.measureKey()
+        if key != getattr(self, "measuredKey", None):
+            self.measuredBlock = self.measureBlock()
+            self.measuredKey = key
+        block = self.measuredBlock
         self.cfg["size"] = self.fitSize(block)
         self.cfg["ink"] = (block["topEm"] / 1000.0, block["belowEm"] / 1000.0)
         return self.cfg
@@ -4122,6 +4361,59 @@ class KINOMAT(object):
                           "value": valori.get(ident, a)})
         return fuori or None
 
+    def timeStops(self):
+        """
+        Give every instance the same pause, HOLD_SECONDS, whatever the number
+        of them, and lengthen the cycle when the Duration typed leaves too
+        little time: each move from one instance to the next gets at least
+        MOVE_SECONDS. The Duration field keeps what was typed; the cycle the
+        film runs on is the longer one, and the hint and the status say so.
+        """
+        c = self.cfg
+        c["holds"] = {}
+        c["typedDuration"] = c["duration"]
+        # Cycle: each glyph its CYCLE_SECONDS. Two seconds for the alphabet ran
+        # 52 glyphs past 30 frames — the run skipped some and stood on others
+        frames = c.get("frames")
+        if frames:
+            need = min(CYCLE_MAX_SECONDS, len(frames) * CYCLE_SECONDS)
+            c["duration"] = round(max(c["duration"], need), 2)
+        stops = c.get("stops")
+        if not stops:
+            return
+        counts = {}
+        for i in stops:
+            ident, a, b = c["ranges"][i]
+            counts[i] = max(1, len(stopPath(a, b, stops[i])) - 1)
+        # how many stretches share one way through the loop: taking turns,
+        # each lane has its own slice of the way
+        turns = len(c["moving"]) if c.get("alternate") else 1
+        ways = 2.0 if c["mode"] == "Ping-pong" else 1.0
+        need = ways * turns * max(counts.values()) * (HOLD_SECONDS + MOVE_SECONDS)
+        c["duration"] = round(min(120.0, max(c["duration"], need)), 2)
+        way = c["duration"] / ways
+        for i, n in counts.items():
+            stretch = way / float(turns * n)
+            c["holds"][i] = HOLD_SECONDS / stretch
+
+    def phased(self):
+        """Whether each lane takes the phase and eases itself: taking turns,
+        starting somewhere else, or stopping on the instances."""
+        c = self.cfg
+        return bool(c.get("alternate") or c.get("random") or c.get("stops"))
+
+    def laneAt(self, i, share):
+        """Lane i at that share of its way, linear: eased as a whole, or
+        stopping on the instances when it has them."""
+        ident, a, b = self.cfg["ranges"][i]
+        stops = (self.cfg.get("stops") or {}).get(i)
+        ease = EASINGS[self.cfg["ease"]][1]
+        if stops:
+            return stopping(share, a, b, stops, ease,
+                            (self.cfg.get("holds") or {}).get(i, HOLD))
+        share = min(1.0, max(0.0, share))
+        return a + (b - a) * ease(share)
+
     def progressAt(self, phase):
         """What a frame is drawn at, for a phase of the cycle.
 
@@ -4129,7 +4421,7 @@ class KINOMAT(object):
         Taking turns, the way through the loop is shared out between them and
         each is eased on its own, so the phase itself goes on and axisValues()
         takes it from there."""
-        if self.cfg.get("alternate") or self.cfg.get("random"):
+        if self.phased():
             return phase
         return phaseToProgress(phase, self.cfg["mode"], self.cfg["ease"])
 
@@ -4138,6 +4430,10 @@ class KINOMAT(object):
             return self.alternateValues(progress)
         if self.cfg.get("random"):
             return self.randomValues(progress)
+        if self.cfg.get("stops"):
+            way = phaseToProgress(progress, self.cfg["mode"], LINEAR)
+            return dict((ident, self.laneAt(i, way))
+                        for i, (ident, a, b) in enumerate(self.cfg["ranges"]))
         return dict((ident, a + (b - a) * progress)
                     for ident, a, b in self.cfg["ranges"])
 
@@ -4153,7 +4449,7 @@ class KINOMAT(object):
         sent the piece from one end of its range to the other in a single
         frame \u2014 426 units of weight, twice a cycle, measured.
         """
-        if self.cfg.get("alternate") or self.cfg.get("random"):
+        if self.phased():
             return self.axisValues(phase)
         return self.axisValues(
             phaseToProgress(phase % 1.0, self.cfg["mode"], self.cfg["ease"]))
@@ -4169,8 +4465,8 @@ class KINOMAT(object):
         values = {}
         for i, (ident, a, b) in enumerate(self.cfg["ranges"]):
             shift = offsets[i] if i < len(offsets) else 0.0
-            values[ident] = a + (b - a) * phaseToProgress(
-                (phase + shift) % 1.0, mode, ease)
+            values[ident] = self.laneAt(i, phaseToProgress(
+                (phase + shift) % 1.0, mode, LINEAR))
         return values
 
     def alternateValues(self, phase):
@@ -4195,10 +4491,7 @@ class KINOMAT(object):
         values = dict((ident, a) for ident, a, b in ranges)
         for order, index in enumerate(moving):
             ident, a, b = ranges[index]
-            share = min(1.0, max(0.0, reached - order))
-            if 0.0 < share < 1.0:
-                share = ease(share)
-            values[ident] = a + (b - a) * share
+            values[ident] = self.laneAt(index, reached - order)
         return values
 
     def cycleFrames(self):
@@ -4213,6 +4506,10 @@ class KINOMAT(object):
         In the box a glyph can be named the way Glyphs names one anywhere else:
         /Aacute, ending at a space or at the next slash. Everything else is read
         a character at a time.
+
+        More than one line in the box, and each frame has a glyph of every line,
+        one above the other: the first of each, then the second of each. A
+        shorter line starts over while the longest runs on.
         """
         typed = (self.w.text.get() or "").replace("\\n", "\n")
         wanted = []
@@ -4227,6 +4524,9 @@ class KINOMAT(object):
                 if name:
                     wanted.append(("name", name))
                 index = end + 1 if end < len(typed) and typed[end] == " " else end
+            elif letter == "\n":
+                wanted.append(("break", None))
+                index += 1
             elif letter.isspace():
                 index += 1
             else:
@@ -4283,19 +4583,29 @@ class KINOMAT(object):
             except Exception:
                 return False
 
-        if wanted:
-            out = []
+        if any(kind != "break" for kind, _ in wanted):
+            rows = [[]]
             for kind, value in wanted:
+                if kind == "break":
+                    rows.append([])
+                    continue
                 if kind == "char":
-                    out.append([value])
+                    rows[-1].append(value)
                     continue
                 glyph = self.font.glyphs[value]
                 if glyph is None or not drawn(glyph):
                     continue
                 letter = spelled(glyph)
                 if letter is not None:
-                    out.append([letter])
-            return out or None
+                    rows[-1].append(letter)
+            rows = [row for row in rows if row]
+            if not rows:
+                return None
+            if len(rows) == 1:
+                return [[letter] for letter in rows[0]]
+            # 1.00: one glyph of each line per frame, the lines kept apart
+            longest = max(len(row) for row in rows)
+            return [[row[i % len(row)] for row in rows] for i in range(longest)]
 
         out = []
         for glyph in self.font.glyphs:
@@ -4312,6 +4622,14 @@ class KINOMAT(object):
             if letter is not None:
                 out.append([letter])
         return out or None
+
+    def measureKey(self):
+        """What measureBlock() depends on, as one comparable value."""
+        c = self.cfg
+        return (id(self.baseFont), getattr(self, "vfPath", None)) + tuple(
+            repr(c.get(name)) for name in (
+                "lines", "frames", "track", "features", "alternate", "random",
+                "moving", "mode", "ease", "ranges", "stops", "holds", "offsets"))
 
     def measureBlock(self):
         """
@@ -4390,6 +4708,14 @@ class KINOMAT(object):
     def canvasSize(self):
         return self.cfg["canvas"]
 
+    def cycleAt(self, phase):
+        """Cycle: the glyph of that point of the cycle, each one on screen for
+        the same share of it."""
+        frames = self.cfg["frames"]
+        # a hair over, so a frame that falls exactly on a glyph's start is not
+        # rounded back onto the one before: every glyph the same count of frames
+        return frames[min(len(frames) - 1, max(0, int(phase * len(frames) + 1e-6)))]
+
     def renderAt(self, progress, w, h, size, at=None, phase=None, hits=None):
         """A frame at that point of the cycle; at is its time in the film, in
         seconds, which a video backdrop takes its picture from."""
@@ -4398,12 +4724,11 @@ class KINOMAT(object):
         frames = c.get("frames")
         starts = c.get("starts")
         if frames:
-            # progress is the eased, looped one, so the run breathes with the
-            # easing and turns back on itself in ping-pong, like everything else;
-            # alternating, what arrives is the phase, and the run is eased here
-            at = (phaseToProgress(progress, c["mode"], c["ease"])
-                  if (c.get("alternate") or c.get("random")) else progress)
-            lines = frames[min(len(frames) - 1, max(0, int(at * len(frames))))]
+            # the run goes at an even pace and always forward, whatever the
+            # easing and the loop: eased, the glyphs at the ends stood still for
+            # a dozen frames and the ones in the middle were skipped — the run
+            # went in jerks. The axes keep their easing and their ping-pong.
+            lines = self.cycleAt(progress if phase is None else phase)
             # one glyph at a time: no letter of the text stands where it was
             # coloured, so the run is all in Ink
             starts = None
@@ -4422,6 +4747,25 @@ class KINOMAT(object):
                 # the zoom and the turn already in it: it is drawn as it is
                 backdrop = self.tinted(backdrop, w, h, c["tint"], zoom, turn)
                 zoom, turn = 1.0, 0.0
+        # Onion skin: the moments just before this one, oldest first. Play
+        # once has nothing before its start; the loops wrap round, so the first
+        # frame of the film trails the end of the cycle and the loop is seamless.
+        ghosts = None
+        count = c.get("onion") or 0
+        if count and phase is not None:
+            ghosts = []
+            for k in range(count, 0, -1):
+                back = phase - k * c.get("onionGap", 0.05)
+                if c["mode"] == "Play once":
+                    if back < 0:
+                        continue
+                else:
+                    back %= 1.0
+                ghostLines = lines
+                if frames:
+                    ghostLines = self.cycleAt(back)
+                ghosts.append((back, ghostLines,
+                               ONION_ALPHA * (count - k + 1) / float(count)))
         # the frame is drawn at the eased progress, but the pieces are
         # delayed in the phase: see valuesAtPhase
         return renderFrame(self.baseFont, w, h, lines, size, c["lead"],
@@ -4432,7 +4776,8 @@ class KINOMAT(object):
                            c.get("bright", 0.0), c.get("contrast", 0.0), c.get("ink"),
                            c.get("features"), c.get("textTurn", 0.0),
                            c.get("outlines", False),
-                           c.get("letterColours"), starts, hits)
+                           c.get("letterColours"), starts, hits, ghosts,
+                           c.get("opacity", 1.0))
 
     # -- preview -------------------------------------------------------------
 
@@ -4820,11 +5165,27 @@ class KINOMAT(object):
         self.w.duration.enable(not following)
         self.w.fps.enable(not following)
         self.paintRealTime()
+        frames = self.cfg.get("frames")
+        try:
+            self.w.cycleNote.set("%d glyphs \u00b7 %g s each" % (
+                len(frames), round(self.cfg["duration"] / len(frames), 2))
+                if frames else "one glyph at a time")
+        except Exception:
+            pass
         # taking turns, the hint says in what order
         if self.cfg.get("alternate"):
             self.w.axesHint.set("one after another, adding up")
         elif self.cfg.get("random"):
             self.w.axesHint.set("each lane starting somewhere else")
+        elif self.cfg.get("stops"):
+            longer = self.cfg["duration"] > self.cfg.get("typedDuration", 0) + 1e-6
+            self.w.axesHint.set(
+                "stopping on the instances \u00b7 cycle %s s" % shortNumber(self.cfg["duration"])
+                if longer else "stopping on the instances")
+        elif (self.cfg.get("frames") and
+              self.cfg["duration"] > self.cfg.get("typedDuration", 0) + 1e-6):
+            self.w.axesHint.set("Cycle: %d glyphs \u00b7 cycle %s s" % (
+                len(self.cfg["frames"]), shortNumber(self.cfg["duration"])))
         else:
             self.w.axesHint.set(self.axesHintText())
 
@@ -4863,6 +5224,25 @@ class KINOMAT(object):
     def rollOffsets(self):
         """Where in the cycle each lane starts: one number drawn for each."""
         self.offsets = [random.random() for _ in self.axes]
+
+    def reverseLook(self, on):
+        """The ⇄ of a lane: orange when the lane runs backwards, a plain pill
+        like the others when it does not."""
+        if on:
+            return dict(fill=ACCENT, colour=NSColor.whiteColor(), size=13,
+                        weight=NSFontWeightSemibold)
+        return dict(fill=SURF_FIELD, border=LINE_FIELD, colour=INK_BUTTON,
+                    size=13, weight=NSFontWeightMedium)
+
+    def toggleReverse(self, index, on=None):
+        self.reversed[index] = (not self.reversed[index]) if on is None else bool(on)
+        try:
+            self.paintPill(getattr(self.w, "axRev%d" % index), "\u21c4",
+                           **self.reverseLook(self.reversed[index]))
+        except Exception:
+            pass
+        if on is None:
+            self.settingsChanged()
 
     def toggleHide(self, index):
         self.hidden[index] = bool(self.hideChecks[index].on)
@@ -4921,6 +5301,28 @@ class KINOMAT(object):
         """The box as it is drawn: \\n typed out is a line break."""
         return (self.w.text.get() or "").replace("\\n", "\n")
 
+    def cycleLetters(self):
+        """With Cycle on and something in the box: the letters its frames are
+        made of. Only an empty box runs through the whole font; anything typed
+        needs no more than its own letters, and exporting the whole font for
+        them kept Glyphs busy — sometimes for good — each time Cycle was
+        turned on. None when the whole font is wanted, or Cycle is off."""
+        if not self.cycleCheck.on:
+            return None
+        frames = (getattr(self, "cfg", None) or {}).get("frames")
+        if not frames or not (self.w.text.get() or "").strip():
+            return None
+        return frozenset(letter for frame in frames for line in frame
+                         for letter in line if not letter.isspace())
+
+    def wantedLetters(self):
+        """The letters the panel shows: Cycle's, or the box's."""
+        cycled = self.cycleLetters()
+        return cycled if cycled is not None else frozenset(self.typed())
+
+    def wholeFontWanted(self):
+        return bool(self.cycleCheck.on) and self.cycleLetters() is None
+
     def keepUp(self):
         """
         With a part of the font compiled: whether it still has all the panel
@@ -4930,7 +5332,7 @@ class KINOMAT(object):
         """
         if self.kept is None or self.stuck:
             return
-        if self.cycleCheck.on:
+        if self.wholeFontWanted():
             self.later(0.05)
             return
         if self.charset is None:
@@ -4938,7 +5340,7 @@ class KINOMAT(object):
                 self.charset = CoreText.CTFontCopyCharacterSet(self.baseFont)
             except Exception:
                 return
-        lacking = [letter for letter in set(self.typed())
+        lacking = [letter for letter in self.wantedLetters()
                    if not letter.isspace() and letter not in self.absent
                    and not self.charset.longCharacterIsMember_(ord(letter))]
         if lacking:
@@ -4970,17 +5372,18 @@ class KINOMAT(object):
             return
         if self.kept is None or self.stuck:
             return
-        if self.cycleCheck.on and self.wholeTried:
+        whole = self.wholeFontWanted()
+        if whole and self.wholeTried:
             return
         letters, needed = self.letters, None
-        if not self.cycleCheck.on:
+        if not whole:
             letters = self.letters | frozenset(
-                letter for letter in self.typed() if not letter.isspace())
+                letter for letter in self.wantedLetters() if not letter.isspace())
             needed = neededGlyphs(self.font, letters)
             if needed is not None and needed[0] <= self.kept:
                 # nothing to add: what the font lacks the document lacks too,
                 # and CoreText draws it from another font, as it always has
-                self.absent = self.absent | frozenset(self.typed())
+                self.absent = self.absent | frozenset(self.wantedLetters())
                 return
         started = time.time()
         try:
@@ -5761,7 +6164,7 @@ class KINOMAT(object):
 
     # -- a project: the settings as a file of their own -----------------------
 
-    def projectData(self):
+    def projectData(self, sync=True):
         """
         Everything the panel is set to, as plain data for a .rsztools file:
         JSON that says which app it is for, like the projects of the tools on
@@ -5769,14 +6172,20 @@ class KINOMAT(object):
 
         The font is not in it. A project takes the font of the Glyphs file that
         is open, and its lanes go back to the axes with the same tag.
+
+        sync=False takes the settings as the last change left them: the
+        once-a-second keeping does, so it never redraws the frame's measure
+        in the middle of the film (with Cycle that was 0.4 s, every second).
         """
-        self.syncConfig()
+        if sync or not self.cfg.get("raw"):
+            self.syncConfig()
         lanes = []
         for i, ax in enumerate(self.axes):
             a, b = self.cfg["raw"][i]
             lanes.append({"tag": laneKey(ax), "name": ax.get("name", ""),
                           "from": a, "to": b, "animate": bool(self.animate[i]),
-                          "hide": bool(self.hidden[i])})
+                          "hide": bool(self.hidden[i]),
+                          "reverse": bool(self.reversed[i])})
         return {
             "app": PROJECT_APP,
             "v": 1,
@@ -5793,6 +6202,9 @@ class KINOMAT(object):
             "tracking": self.num(self.w.track, 0.0),
             "textRotate": self.num(self.w.textTurn, 0.0),
             "outlines": bool(self.outlineCheck.on),
+            "onion": bool(self.onionCheck.on),
+            "onionGhosts": int(round(self.num(self.w.onion, 4))),
+            "opacity": self.num(self.w.opacity, 100.0),
             "sliders": bool(self.sliderCheck.on),
             "filmSize": float(self.filmStep or 1.0),
             "align": ALIGNMENTS[self.alignIndex],
@@ -5820,6 +6232,7 @@ class KINOMAT(object):
             "bright": self.bright,
             "contrast": self.contrast,
             "random": bool(self.randomCheck.on),
+            "instances": bool(self.instancesCheck.on),
             "offsets": [round(float(v), 4) for v in self.offsets],
             "colorize": {"on": bool(self.tintOn),
                          "dark": hexFromNSColor(self.w.tintDark.get()).upper(),
@@ -6120,6 +6533,9 @@ class KINOMAT(object):
         number("tracking", "track")
         number("textRotate", "textTurn")
         tick("outlines", self.outlineCheck)
+        tick("onion", self.onionCheck)
+        number("onionGhosts", "onion", True)
+        number("opacity", "opacity")
         tick("sliders", self.sliderCheck)
         if usable(data.get("filmSize")):
             self.filmStep = min(2.0, max(1.0, float(data["filmSize"])))
@@ -6192,6 +6608,7 @@ class KINOMAT(object):
                 usable(v) for v in data["offsets"]):
             self.offsets = [float(v) % 1.0 for v in data["offsets"]]
         tick("random", self.randomCheck)
+        tick("instances", self.instancesCheck)
         if isinstance(data.get("realTime"), bool):
             self.realTime = data["realTime"]
             self.realTimeBox.on = self.realTime
@@ -6223,15 +6640,17 @@ class KINOMAT(object):
                     held[i] = lane[part]
                     box.on = lane[part]
                     box.setNeedsDisplay_(True)
+            # a project from before Reverse runs every lane forwards
+            self.toggleReverse(i, bool(lane.get("reverse", False)))
         self.settingsChanged()
         return missing
 
-    def rememberLast(self):
+    def rememberLast(self, sync=True):
         """The panel as it is, into Glyphs' preferences: what a .rsztools
         project would hold, so the next window opens where this one was left."""
         try:
             import json
-            data = self.projectData()
+            data = self.projectData(sync)
             # the moment it was written is not a setting: two writes of the
             # same panel are the same text without it
             same = dict(data)
@@ -6260,7 +6679,7 @@ class KINOMAT(object):
     def keepNow(self):
         if self.closed or getattr(self, "rebuilding", False) or self.exporting:
             return
-        self.rememberLast()
+        self.rememberLast(sync=False)
 
     def stopKeeping(self):
         if self.keepTimer is not None:
@@ -6365,6 +6784,31 @@ def alreadyHolds(key):
 		return None
 
 
+def frontPanel():
+	"""Bring the Kinomat panel already open to the front. True if there was one.
+
+	One panel at a time: a second would export the same font again and play
+	the same film beside the first. A window put away in the Dock comes back;
+	one that is gone without having said so (vanilla's close() never calls the
+	"close" binding) is forgotten, and a new panel opens."""
+	for panel in list(OPEN_PANELS):
+		window = None
+		if not getattr(panel, "closed", False):
+			try:
+				window = panel.w.getNSWindow()
+			except Exception:
+				window = None
+		if window is None or not (window.isVisible() or window.isMiniaturized()):
+			if panel in OPEN_PANELS:
+				OPEN_PANELS.remove(panel)
+			continue
+		if window.isMiniaturized():
+			window.deminiaturize_(None)
+		window.makeKeyAndOrderFront_(None)
+		return True
+	return False
+
+
 class KINOMATPlugin(GeneralPlugin):
 
 	@objc.python_method
@@ -6394,6 +6838,9 @@ class KINOMATPlugin(GeneralPlugin):
 
 	def openWindow_(self, sender):
 		self.sweepAtQuit()
+		# one panel only: ⌘K again brings the open one to the front
+		if frontPanel():
+			return
 		try:
 			KINOMAT()
 		except Exception:

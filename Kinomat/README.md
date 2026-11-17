@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 0.99** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 1.09** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -10,7 +10,7 @@ A plugin for the [Glyphs font editor](https://glyphsapp.com/) that turns your va
 
 **Exporting the film needs the Pro version.** Everything else is the demo, and the demo is the whole panel. One payment, no subscription: **[get the key — €19](https://buy.stripe.com/5kQ5kD5SX38m19New9eQM05)**. The same key opens the tools at [resistenza.es/tools](https://resistenza.es/tools/).
 
-<img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, the word on the stage, and one lane per axis underneath." title="Kinomat screenshot" width="720">
+<img src="Kinomat.png" alt="The Kinomat panel: the settings on the left with the FONT Export row, a K in Industria Serif on a yellow stage, and one lane per axis underneath, Weight and Italic moving." title="Kinomat screenshot" width="720">
 
 ### Final result
 
@@ -20,7 +20,7 @@ A plugin for the [Glyphs font editor](https://glyphsapp.com/) that turns your va
 
 ### Installation
 
-Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*, or ⌘K.
+Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*, or ⌘K. There is one panel at a time: ⌘K again brings it to the front.
 
 The Pro key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
@@ -42,14 +42,12 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 |---|---|
 | the box | what is filmed, one line per line. It opens on the font's own name |
 | `Size` | in points, on the canvas — with **Fit width** it is set for you, as wide as the canvas allows |
-| `Leading` | the distance between lines, as a percentage |
-| `Tracking` | letter-spacing, per thousand of the em, on top of the font's own kerning |
-| `Rotate` | turns the text, in degrees, around the middle of the canvas |
-| `Align` | left, centre, right |
+| `Leading` · `Track` | the distance between lines, as a percentage · letter-spacing, per thousand of the em, on top of the font's own kerning |
+| `Rotate` · align | turns the text, in degrees, around the middle of the canvas · left, centre, right |
 | `Ligatures` | **liga** standard ones, clig with them · **dlig** the discretionary ones. Measured as they are drawn |
 | `Outlines` | the letters drawn as outlines only, in the Ink colour |
+| `Onion` | onion skin: the frames just gone by stay behind the text as fading ghosts, one every 0.1 s — how many, 1 to 12, in the field. In the preview and in every export |
 | a letter's colour | click a letter on the stage: a box of swatches gives it a colour of its own — the house colours, the wheel, lighter and darker, a hex to type, or any colour from the system's panel. *Ink* gives it back. The colour stays with the letter as the text is edited, and is saved in the project |
-| `Cycle` | instead of the word, the font's glyphs one after another, components included. Glyphs whose curves cannot be made compatible between masters are left out, and the panel says how many |
 
 **CANVAS**
 
@@ -58,6 +56,7 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 | `Preset` | Reel / Story 9:16 · Post 1:1 · Post 4:5 · Post 5:4 · Landscape 16:9 · Square 2000 · Custom |
 | `Size` | width × height in pixels, if none of those fits |
 | `Stage`, `Ink` | the two colours, by picker or by hex. The **⇄** between them is the film in negative |
+| `Opacity` | how much of the Ink shows, 0 to 100 %: the stage or the background shows through the letters, and overlapping letters do not darken |
 
 **BACKGROUND**
 
@@ -73,10 +72,11 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 
 | | |
 |---|---|
+| `Cycle` | instead of the text, one glyph at a time: the ones typed in the box (a line each, one above the other, with more lines), or every glyph of the font with a Unicode value when the box is empty. Each glyph stays on screen 0.3 s, always forward, while the axes move as set: a long list makes the cycle longer, up to 18 s, and the panel says so beside the lanes. Glyphs whose curves cannot be made compatible between masters are left out, and the panel says how many |
 | `Duration` | seconds, and `fps` frames a second |
 | `Easing` | Linear · Ease In · Ease Out · Ease In-Out · Sine In-Out · Expo In-Out · Back In-Out · Elastic Out · Bounce Out |
 | `Loop` | **Ping-pong** out and back · **Restart** out and from the start again · **Play once** |
-| `Animate` | **Whole** the text as one · **Words** · **Letters**, each piece a step behind the one before. A single word has nothing to divide, and the panel says so |
+| `Animate` | **Whole** the text as one, every line together · **Words** · **Letters**, each piece a step behind the one before. A single word has nothing to divide, and the panel says so |
 | `Repeat` | how many times the loop runs in the MP4. Beside it, how long the MP4 comes out: Duration × Repeat, or one loop with Play once. A GIF plays one loop, forever |
 
 **THE LANES** — one per axis, then **Size** and **Tracking**, always. With axes those two start switched off; with none they are the whole film.
@@ -86,10 +86,12 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 | the tick beside the name | this axis moves. Unticked, it stands still |
 | diamond or circle | a **diamond** is an end of a movement, **from** and **to**: a ticked lane has two. A **circle** is one value: an unticked lane has one, and drags to the value the axis stands at |
 | `from → to` | where the axis starts and ends. The diamonds on the track do the same by hand |
+| **⇄** before `from → to` | Reverse: this lane runs from its To back to its From, orange when it is on — in every Loop, with Alternate, Random and Cycle. The fields keep what was typed |
 | the number in orange | where the axis is, right now, in the frame on the stage |
 | `Alternate` | the lanes one after another, each adding to the ones before |
 | `Random` | every lane starts from its own point of the loop, drawn when it was ticked |
-| `Sliders` | draws the lanes in the film itself. With it on, each lane gets a **Hide** box to leave its own slider out |
+| `Show Sliders` | draws the lanes in the film itself. With it on, each lane gets a **Hide** box to leave its own slider out |
+| `Instances` | the moving axes stop on the font's named instances on the way — Regular, Bold… — 0.4 s on each, a quarter of a second at least for every move. When the Duration leaves too little time the cycle grows, and the line beside the lanes says how long it runs |
 
 **THE BAR** — `Export MP4`, `GIF`, `PNG sequence`. *Pro.*
 
@@ -97,7 +99,7 @@ Beside them, how large the film comes out — **1×** the canvas, 1.5×, 2× —
 
 ### What is filmed
 
-Not the masters: Kinomat exports the font, as Font Info would, filters and parameters and features included, and films that. So the film shows the font as it goes out, not the drawing. Only the glyphs the text needs are exported, which is quick; type a letter that was not in it and the missing ones are added once the typing stops.
+Not the masters: Kinomat exports the font, as Font Info would, filters and parameters and features included, and films that. So the film shows the font as it goes out, not the drawing. Only the glyphs the text needs are exported, which is quick; type a letter that was not in it and the missing ones are added once the typing stops. Cycle with an empty box exports the whole font.
 
 ### Requirements
 
