@@ -2050,7 +2050,7 @@ def cachedFont(font, master=None, needed=None, setting=None):
     return path, kept
 
 
-def _generate(font, folder, master=None, keep=None, setting=None):
+def _generate(font, folder, master=None, keep=None, setting=None, disable=None):
     """One export attempt. Returns (path, error). Nothing about the document is
     touched: an earlier version lent private-use codepoints to the glyphs that
     have none, so the cycle could show components too, and that both slowed the
@@ -2060,7 +2060,9 @@ def _generate(font, folder, master=None, keep=None, setting=None):
     a document with nothing to vary, or that cannot be varied.
     keep: only the glyphs named go out. The instance in Font Info never carries
     the list: a copy of it does, or the temporary instance when there is none.
-    When neither can, nothing is exported and the error says why."""
+    When neither can, nothing is exported and the error says why.
+    disable: master names left out of the variable font as well, on the copy
+    only, besides the ones its Disable Masters already names (1.10)."""
     static = master is not None
     instance = (staticInstance(font, master) if static
                 else variableInstance(font, setting))
@@ -2069,6 +2071,17 @@ def _generate(font, folder, master=None, keep=None, setting=None):
         instance = keepOnly(instance, font, keep)
         if instance is None:
             return None, "The instance cannot export a part of the font."
+        if disable:
+            disableMasters(instance, disable)
+    elif instance is not None and disable:
+        try:
+            twin = instance.copy()
+            twin.font = font
+        except Exception:
+            twin = None
+        if twin is None:
+            return None, "The instance cannot be copied."
+        instance = disableMasters(twin, disable)
     elif instance is None:
         instance = GSInstance()
         instance.name = "Kinomat"
@@ -2091,6 +2104,8 @@ def _generate(font, folder, master=None, keep=None, setting=None):
                 instance.customParameters["Keep Glyphs"] = sorted(keep)
             except Exception as trouble:
                 return None, "No part of the font: %s" % trouble
+        if disable and not static:
+            disableMasters(instance, disable)
         font.instances.append(instance)
         temporary = True
         if static:
@@ -2144,6 +2159,114 @@ def emptyCache():
     shutil.rmtree(CACHE_FOLDER, ignore_errors=True)
 
 
+# the glyphs the last export had to leave out, their curves not compatible
+# between the masters it is made of (1.10): the panel says it in its status line
+LEFT_OUT = []
+# the masters it left out instead, drawn another way from the rest (1.10)
+LEFT_MASTERS = []
+
+
+def disableMasters(instance, names):
+    """The instance with those masters added to its Disable Masters."""
+    try:
+        have = instance.customParameters["Disable Masters"]
+        have = [str(n) for n in have] if have else []
+    except Exception:
+        have = []
+    instance.customParameters["Disable Masters"] = have + [
+        n for n in names if n not in have]
+    return instance
+
+
+def shapeOf(layer):
+    """What a layer is made of, as far as interpolating goes: the nodes of
+    each path and the glyph each component points to."""
+    try:
+        return (tuple(len(p.nodes) for p in layer.paths),
+                tuple(str(c.componentName) for c in layer.components))
+    except Exception:
+        return None
+
+
+def foreignMasters(font, setting, error):
+    """
+    The masters of the variable setting drawn another way from the rest — the
+    names of the masters to leave out, or none.
+
+    Monologo keeps a dotted design among its masters, Dots and Dot2: the same
+    letters made of round components, which interpolate with each other and
+    never with the outlines. The setting did not cancel them, so every letter
+    of the variable font was "not compatible", and leaving those glyphs out
+    left a font with no letters in it (1.10). The glyphs the error names are
+    compared master by master with the setting's origin; a master unlike it in
+    most of them is the odd one. With three masters or fewer there is no
+    telling which side is odd, and nothing is left out.
+    """
+    import re
+    found = re.search(r"not compatible:\s*(.*?)\s*Can.t convert", error or "", re.S)
+    if not found:
+        return []
+    names = [n.strip() for n in found.group(1).split(",") if n.strip()]
+    instance = variableInstance(font, setting)
+    disabled, origin = set(), None
+    if instance is not None:
+        try:
+            value = instance.customParameters["Disable Masters"]
+            disabled = set(str(n) for n in value) if value else set()
+        except Exception:
+            pass
+        try:
+            origin = instance.customParameters["Variable Font Origin"]
+        except Exception:
+            origin = None
+    if origin is None:
+        try:
+            origin = font.customParameters["Variable Font Origin"]
+        except Exception:
+            origin = None
+    masters = [m for m in font.masters if str(m.name) not in disabled]
+    if len(masters) < 3:
+        return []
+    base = None
+    for m in masters:
+        if origin is not None and str(origin) in (str(m.id), str(m.name)):
+            base = m
+    base = base or masters[0]
+    votes, counted = dict((m.id, 0) for m in masters), 0
+    for name in names[:40]:
+        glyph = font.glyphs[name]
+        if glyph is None:
+            continue
+        ref = shapeOf(glyph.layers[base.id])
+        if ref is None:
+            continue
+        counted += 1
+        for m in masters:
+            if m is not base and shapeOf(glyph.layers[m.id]) != ref:
+                votes[m.id] += 1
+    odd = [str(m.name) for m in masters
+           if counted and votes[m.id] * 2 > counted]
+    if not odd or len(odd) >= len(masters) - 1:
+        return []
+    return odd
+
+
+def leftOutNote(names, masters=()):
+    """The status line for an export that left glyphs or masters out: how
+    many, the first few, and where the whole list is."""
+    said = []
+    if masters:
+        said.append("Masters %s left out, not compatible" % ", ".join(masters))
+    if names:
+        shown = ", ".join(names[:6]) + ("\u2026" if len(names) > 6 else "")
+        said.append("%d glyphs left out (%s)" % (len(names), shown))
+    return " \u00b7 ".join(said + ["see the Macro panel"])
+
+
+def _generateOnce(font, folder, master, keep, setting, disable):
+    return _generate(font, folder, master, keep, setting, disable or None)
+
+
 def exportFont(font, master=None, needed=None, setting=None):
     """
     Export the font to a temporary folder, as (path, kept): the variable font,
@@ -2157,6 +2280,24 @@ def exportFont(font, master=None, needed=None, setting=None):
     """
     folder = CACHE_FOLDER
     clearFolder(folder)
+    del LEFT_OUT[:]
+    del LEFT_MASTERS[:]
+    off = []                       # masters left out, once they are known
+
+    def _generate(font, folder, master, keep, setting):
+        # masters drawn another way first, glyphs only after (1.10)
+        path, error = _generateOnce(font, folder, master, keep, setting, off)
+        if not path and master is None and not off:
+            odd = foreignMasters(font, setting, error)
+            if odd:
+                off[:] = odd
+                LEFT_MASTERS[:] = odd
+                print("Kinomat \u2014 masters left out of the variable font, "
+                      "drawn another way from the rest: %s" % ", ".join(odd))
+                clearFolder(folder)
+                path, error = _generateOnce(font, folder, master, keep,
+                                            setting, off)
+        return path, error
 
     path, error, kept = None, None, None
     if needed is not None:
@@ -2186,9 +2327,10 @@ def exportFont(font, master=None, needed=None, setting=None):
             left |= set(n.strip() for n in found.group(1).split(",") if n.strip())
             names = frozenset(g.name for g in font.glyphs if g.name not in left)
             clearFolder(folder)
-            path, error = _generate(font, folder, master, names, setting)
+            path, error = _generateOnce(font, folder, master, names, setting, off)
             if path:
                 kept = names
+                LEFT_OUT[:] = sorted(left)
                 print("Kinomat \u2014 left out, they cannot be made compatible "
                       "TrueType: %s" % ", ".join(sorted(left)))
                 break
@@ -2949,6 +3091,11 @@ class KINOMAT(object):
         except Exception as e:
             Message("Kinomat", str(e))
             return
+        # what was asked for and did not come out — glyphs left out as not
+        # compatible, letters with no glyph — is not exported again and again
+        # (1.10: Monologo with its Dots masters exported every 0.6 s, for good)
+        self.settleAbsent(self.letters)
+        leftOut, leftMasters = list(LEFT_OUT), list(LEFT_MASTERS)
 
         # Size and Tracking come after the axes, always; with no axes — one
         # master, or a variable export that came out plain — they are all the
@@ -2978,6 +3125,8 @@ class KINOMAT(object):
         elif self.static and getattr(self, "variableTrouble", None):
             note = "Variable export failed (%s) \u00b7 static %s" % (
                 self.variableTrouble, self.masterName)
+        elif leftOut or leftMasters:
+            note = leftOutNote(leftOut, leftMasters)
         self.w.status.set(note)
 
     # -- window --------------------------------------------------------------
@@ -5323,6 +5472,26 @@ class KINOMAT(object):
     def wholeFontWanted(self):
         return bool(self.cycleCheck.on) and self.cycleLetters() is None
 
+    def settleAbsent(self, letters=None):
+        """
+        The letters asked for that the font in hand lacks, now that an export
+        has had its go at them, taken as absent: keepUp asks for them no more.
+        A glyph left out because its masters are not compatible comes out of no
+        export, and a letter with no glyph neither (1.10).
+        """
+        try:
+            charset = CoreText.CTFontCopyCharacterSet(self.baseFont)
+        except Exception:
+            return frozenset()
+        if letters is None:
+            letters = self.wantedLetters()
+        lacking = frozenset(letter for letter in letters
+                            if not letter.isspace()
+                            and not charset.longCharacterIsMember_(ord(letter)))
+        if lacking:
+            self.absent = self.absent | lacking
+        return lacking
+
     def keepUp(self):
         """
         With a part of the font compiled: whether it still has all the panel
@@ -5402,10 +5571,15 @@ class KINOMAT(object):
         self.baseFont, self.vfPath, self.kept, self.charset = base, path, kept, None
         if needed is not None:
             self.letters = letters
+        # letters this export did not bring either will not come with the next
+        # one: no export after export, the panel standing still each time (1.10)
+        lacking = self.settleAbsent()
         self.settingsChanged()
         spent = time.time() - started
         self.wholeTried = needed is None
-        if kept is None:
+        if lacking and LEFT_OUT:
+            self.w.status.set(leftOutNote(LEFT_OUT, LEFT_MASTERS))
+        elif kept is None:
             self.w.status.set("Whole font exported in %.1f s" % spent)
         elif needed is None:
             self.w.status.set("Font exported without %d glyphs that will not "
@@ -6369,6 +6543,7 @@ class KINOMAT(object):
         self.stuck = False
         self.wholeTried = False
         self.absent = frozenset()
+        self.settleAbsent(self.letters)
         self.vfName = settingName(self.font, wanted)
         missing = None
 
@@ -6743,45 +6918,7 @@ class KINOMAT(object):
 # ----------------------------------------------------------------------------
 from GlyphsApp.plugins import GeneralPlugin
 from AppKit import (NSMenuItem, NSNotificationCenter,
-                    NSApplicationWillTerminateNotification,
-                    NSApplication, NSEventModifierFlagCommand,
-                    NSEventModifierFlagOption, NSEventModifierFlagShift,
-                    NSEventModifierFlagControl)
-
-SHORTCUT = "k"   # with Command: the key that opens the window
-
-
-def alreadyHolds(key):
-	"""The menu item already answering to Command and this key, if any.
-
-	Two items sharing a shortcut is not something macOS complains about: it
-	hands the keystroke to the first one it meets walking the menus and the
-	other simply never fires. Better to say so in the Macro window than to
-	leave somebody wondering why nothing happens."""
-	plain = NSEventModifierFlagCommand
-	all_of_them = (NSEventModifierFlagCommand | NSEventModifierFlagOption
-	               | NSEventModifierFlagShift | NSEventModifierFlagControl)
-	wanted = key.lower()
-
-	def walk(menu):
-		for item in menu.itemArray():
-			try:
-				if (item.keyEquivalent().lower() == wanted
-						and item.keyEquivalentModifierMask() & all_of_them == plain):
-					return item.title()
-			except Exception:
-				pass
-			below = item.submenu()
-			if below is not None:
-				found = walk(below)
-				if found:
-					return found
-		return None
-
-	try:
-		return walk(NSApplication.sharedApplication().mainMenu())
-	except Exception:
-		return None
+                    NSApplicationWillTerminateNotification)
 
 
 def frontPanel():
@@ -6823,14 +6960,7 @@ class KINOMATPlugin(GeneralPlugin):
 			# without a target the action goes up the responder chain, nobody
 			# answers, and macOS greys the item out
 			item.setTarget_(self)
-			# ⌘K opens the window from anywhere in Glyphs
-			taken = alreadyHolds(SHORTCUT)
-			item.setKeyEquivalent_(SHORTCUT)
-			item.setKeyEquivalentModifierMask_(NSEventModifierFlagCommand)
-			if taken:
-				print("Kinomat — ⌘%s already belongs to “%s”. macOS gives "
-					"the keystroke to whichever menu it finds first, so one of "
-					"the two will not answer." % (SHORTCUT.upper(), taken))
+			# no keyboard shortcut (1.11): the window opens from the menu only
 			Glyphs.menu[WINDOW_MENU].append(item)
 		except Exception:
 			import traceback
@@ -6838,7 +6968,7 @@ class KINOMATPlugin(GeneralPlugin):
 
 	def openWindow_(self, sender):
 		self.sweepAtQuit()
-		# one panel only: ⌘K again brings the open one to the front
+		# one panel only: the menu again brings the open one to the front
 		if frontPanel():
 			return
 		try:

@@ -1,6 +1,6 @@
 # 🎥 Kinomat
 
-**Version 1.09** — for Glyphs 3 and 4, macOS 10.15 or later.
+**Version 1.11** — for Glyphs 3 and 4, macOS 10.15 or later.
 
 By Giuseppe Salerno co-founder of [Resistenza Type](https://rsztype.com).
 
@@ -20,7 +20,7 @@ A plugin for the [Glyphs font editor](https://glyphsapp.com/) that turns your va
 
 ### Installation
 
-Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*, or ⌘K. There is one panel at a time: ⌘K again brings it to the front.
+Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*. There is one panel at a time: choosing it again brings it to the front.
 
 The Pro key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
@@ -100,6 +100,8 @@ Beside them, how large the film comes out — **1×** the canvas, 1.5×, 2× —
 ### What is filmed
 
 Not the masters: Kinomat exports the font, as Font Info would, filters and parameters and features included, and films that. So the film shows the font as it goes out, not the drawing. Only the glyphs the text needs are exported, which is quick; type a letter that was not in it and the missing ones are added once the typing stops. Cycle with an empty box exports the whole font.
+
+When a master is drawn another way from the rest — dots made of components, say, where the others have outlines — the variable font cannot be made with it. Kinomat then leaves that master out of the film, and only if that is not enough the glyphs that still will not go out; the status line names what was left out.
 
 ### Requirements
 
