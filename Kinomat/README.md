@@ -101,12 +101,6 @@ A document with axes films its **variable font export** from *Font Info ▸ Expo
 
 Beside them, how large the film comes out — **1×** the canvas, 1.5×, 2× — and the codec: **H.264**, which plays everywhere, or **HEVC**, a finer edge on coloured letters and a film that plays on Apple's machines and nowhere else. The status line says what was written, how large, and in which of the two.
 
-### What is filmed
-
-Not the masters: Kinomat exports the font, as Font Info would, filters and parameters and features included, and films that. So the film shows the font as it goes out, not the drawing. Only the glyphs the text needs are exported, which is quick; type a letter that was not in it and the missing ones are added once the typing stops. Cycle with an empty box exports the whole font.
-
-When a master is drawn another way from the rest — dots made of components, say, where the others have outlines — the variable font cannot be made with it. Kinomat then leaves that master out of the film, and only if that is not enough the glyphs that still will not go out; the status line names what was left out.
-
 ### Requirements
 
 Glyphs 3 or Glyphs 4, macOS 10.15 or later. MP4 and GIF are written by the system's own encoders, so nothing else has to be installed.
