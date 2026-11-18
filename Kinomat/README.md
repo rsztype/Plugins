@@ -22,6 +22,10 @@ A plugin for the [Glyphs font editor](https://glyphsapp.com/) that turns your va
 
 Unzip and double-click `Kinomat.glyphsPlugin`, or drop it into `~/Library/Application Support/Glyphs 4/Plugins/`. Restart Glyphs, then *Window ▸ Kinomat*. There is one panel at a time: choosing it again brings it to the front.
 
+**A shortcut of your own.** Kinomat comes without one. In *Glyphs ▸ Settings ▸ Shortcuts* find **Kinomat**, click *Record shortcut* and press the keys — ⌘K, say. It stays through updates, and the *Conflicts* tab tells you if the keys are already taken.
+
+<img src="Kinomat-shortcut.png" alt="Glyphs Settings, Shortcuts: the Shortcuts tab and the Kinomat row, with ⌘K recorded, outlined in orange." title="Kinomat — a shortcut of your own" width="620">
+
 The Pro key goes in the top right of the panel, beside the name of the font: the button says *Insert Key* until it carries one.
 
 ### The panel
